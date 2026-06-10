@@ -10,8 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
-import { Send, Plus, Trash2, Image as ImageIcon, X } from "lucide-react";
-import { addChannel, listChannels, deleteChannel, broadcast } from "@/lib/telegram.functions";
+import { Send, Plus, Trash2, Image as ImageIcon, X, Save, Pencil, FileText } from "lucide-react";
+import {
+  addChannel, listChannels, deleteChannel, broadcast,
+  listPosts, savePost, deletePost,
+} from "@/lib/telegram.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,24 +41,26 @@ function Index() {
   const addFn = useServerFn(addChannel);
   const delFn = useServerFn(deleteChannel);
   const sendFn = useServerFn(broadcast);
+  const listPostsFn = useServerFn(listPosts);
+  const savePostFn = useServerFn(savePost);
+  const delPostFn = useServerFn(deletePost);
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => listFn(),
-  });
+  const { data: channels = [] } = useQuery({ queryKey: ["channels"], queryFn: () => listFn() });
+  const { data: posts = [] } = useQuery({ queryKey: ["posts"], queryFn: () => listPostsFn() });
 
+  const [tab, setTab] = useState("compose");
   const [chatInput, setChatInput] = useState("");
   const addMut = useMutation({
     mutationFn: (chat: string) => addFn({ data: { chat } }),
     onSuccess: () => { toast.success("Channel added"); setChatInput(""); qc.invalidateQueries({ queryKey: ["channels"] }); },
     onError: (e: any) => toast.error(e.message),
   });
-
   const delMut = useMutation({
     mutationFn: (id: string) => delFn({ data: { id } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["channels"] }),
   });
 
+  const [editId, setEditId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -64,13 +69,27 @@ function Index() {
   const [buttonColor, setButtonColor] = useState(BUTTON_COLORS[0].value);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const resetForm = () => {
+    setEditId(null); setText(""); setImageBase64(null); setImagePreview(null);
+    setButtonText(""); setButtonUrl(""); setButtonColor(BUTTON_COLORS[0].value);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const loadPost = (p: any) => {
+    setEditId(p.id);
+    setText(p.text || "");
+    setImageBase64(p.image_base64 || null);
+    setImagePreview(p.image_base64 || null);
+    setButtonText(p.button_text || "");
+    setButtonUrl(p.button_url || "");
+    setButtonColor(p.button_color || BUTTON_COLORS[0].value);
+    setTab("compose");
+  };
+
   const onFile = (f: File | null) => {
     if (!f) return;
     const r = new FileReader();
-    r.onload = () => {
-      setImageBase64(r.result as string);
-      setImagePreview(r.result as string);
-    };
+    r.onload = () => { setImageBase64(r.result as string); setImagePreview(r.result as string); };
     r.readAsDataURL(f);
   };
 
@@ -88,7 +107,27 @@ function Index() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const canSend = (text.trim().length > 0 || imageBase64) && channels.length > 0;
+  const saveMut = useMutation({
+    mutationFn: () => savePostFn({ data: { id: editId, text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null, buttonColor } }),
+    onSuccess: (row: any) => {
+      toast.success(editId ? "Post updated" : "Post saved");
+      setEditId(row.id);
+      qc.invalidateQueries({ queryKey: ["posts"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const delPostMut = useMutation({
+    mutationFn: (id: string) => delPostFn({ data: { id } }),
+    onSuccess: (_d, id) => {
+      toast.success("Deleted");
+      if (editId === id) resetForm();
+      qc.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const hasContent = text.trim().length > 0 || imageBase64;
+  const canSend = hasContent && channels.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30 pb-20">
@@ -105,13 +144,20 @@ function Index() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 pt-6">
-        <Tabs defaultValue="compose" className="w-full">
-          <TabsList className="grid grid-cols-2 w-full">
+        <Tabs value={tab} onValueChange={setTab} className="w-full">
+          <TabsList className="grid grid-cols-3 w-full">
             <TabsTrigger value="compose">Compose</TabsTrigger>
+            <TabsTrigger value="saved">Saved {posts.length > 0 && <span className="ml-1 text-xs opacity-70">({posts.length})</span>}</TabsTrigger>
             <TabsTrigger value="channels">Channels</TabsTrigger>
           </TabsList>
 
           <TabsContent value="compose" className="space-y-4 mt-4">
+            {editId && (
+              <div className="flex items-center justify-between px-3 py-2 rounded-md bg-muted text-xs">
+                <span>Editing saved post</span>
+                <Button size="sm" variant="ghost" onClick={resetForm}>New</Button>
+              </div>
+            )}
             <Card>
               <CardHeader><CardTitle className="text-base">Message</CardTitle></CardHeader>
               <CardContent className="space-y-4">
@@ -195,15 +241,69 @@ function Index() {
               </Card>
             )}
 
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={!canSend || sendMut.isPending}
-              onClick={() => sendMut.mutate()}
-            >
-              <Send className="h-4 w-4 mr-2" />
-              {sendMut.isPending ? "Sending..." : `Send to ${channels.length} channel${channels.length === 1 ? "" : "s"}`}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="lg"
+                disabled={!hasContent || saveMut.isPending}
+                onClick={() => saveMut.mutate()}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saveMut.isPending ? "Saving..." : editId ? "Update" : "Save"}
+              </Button>
+              <Button
+                size="lg"
+                disabled={!canSend || sendMut.isPending}
+                onClick={() => sendMut.mutate()}
+              >
+                <Send className="h-4 w-4 mr-2" />
+                {sendMut.isPending ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="saved" className="space-y-3 mt-4">
+            {posts.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No saved posts yet</p>
+              </div>
+            )}
+            {posts.map((p: any) => (
+              <Card key={p.id}>
+                <CardContent className="p-3 space-y-2">
+                  <div className="flex gap-3">
+                    {p.image_base64 && (
+                      <img src={p.image_base64} alt="" className="h-16 w-16 rounded-md object-cover flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm line-clamp-3 break-words">{p.text || <span className="italic text-muted-foreground">(no text)</span>}</p>
+                      {p.button_text && (
+                        <p className="text-xs text-muted-foreground mt-1 truncate">🔘 {p.button_text} → {p.button_url}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm" variant="default" className="flex-1"
+                      disabled={channels.length === 0 || sendMut.isPending}
+                      onClick={() => {
+                        loadPost(p);
+                        setTimeout(() => sendMut.mutate(), 0);
+                      }}
+                    >
+                      <Send className="h-3.5 w-3.5 mr-1" /> Send
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => loadPost(p)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => delPostMut.mutate(p.id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </TabsContent>
 
           <TabsContent value="channels" className="space-y-4 mt-4">
