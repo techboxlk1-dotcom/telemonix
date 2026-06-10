@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value_num: number | null
+          value_text: string | null
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value_num?: number | null
+          value_text?: string | null
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value_num?: number | null
+          value_text?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           balance_usd: number
@@ -82,8 +103,10 @@ export type Database = {
       }
       sent_messages: {
         Row: {
+          button_url: string | null
           channel_id: string | null
           chat_id: string
+          clicks: number
           id: string
           message_id: number | null
           owner_id: number
@@ -92,8 +115,10 @@ export type Database = {
           views: number
         }
         Insert: {
+          button_url?: string | null
           channel_id?: string | null
           chat_id: string
+          clicks?: number
           id?: string
           message_id?: number | null
           owner_id: number
@@ -102,8 +127,10 @@ export type Database = {
           views?: number
         }
         Update: {
+          button_url?: string | null
           channel_id?: string | null
           chat_id?: string
+          clicks?: number
           id?: string
           message_id?: number | null
           owner_id?: number
