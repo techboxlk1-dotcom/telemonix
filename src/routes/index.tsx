@@ -63,6 +63,8 @@ function Index() {
   const listPostsFn = useServerFn(listPosts);
   const savePostFn = useServerFn(savePost);
   const delPostFn = useServerFn(deletePost);
+  const setCpmFn = useServerFn(setCpm);
+  const syncViewsFn = useServerFn(syncViews);
 
   const { data: me } = useQuery({
     queryKey: ["me", initData],
