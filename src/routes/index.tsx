@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import {
   addChannel, listChannels, deleteChannel, broadcast,
-  listPosts, savePost, deletePost, getMe,
+  listPosts, savePost, deletePost, getMe, setCpm, syncViews,
 } from "@/lib/telegram.functions";
 
 export const Route = createFileRoute("/")({
