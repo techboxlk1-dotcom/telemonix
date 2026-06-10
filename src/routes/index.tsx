@@ -136,6 +136,7 @@ function Index() {
     mutationFn: () => sendFn({ data: {
       text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null,
       channelIds: Array.from(selectedChannels), initData,
+      siteOrigin: typeof window !== "undefined" ? window.location.origin : "",
     } }),
     onSuccess: (res) => {
       const ok = res.results.filter((r) => r.ok).length;
