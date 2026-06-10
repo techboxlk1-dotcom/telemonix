@@ -48,11 +48,9 @@ function parseInitData(initData: string): { user: TgUser; valid: boolean } | nul
   }
 }
 
-// Dev/fallback: if no initData (browser preview), allow ?dev_uid param via a fake user
 function resolveUser(initData?: string | null, devUid?: number | null): { user: TgUser; valid: boolean } {
   const parsed = initData ? parseInitData(initData) : null;
   if (parsed?.valid) return parsed;
-  // Dev fallback — allow when running outside Telegram. Treat as valid for preview.
   const id = devUid || ADMIN_ID;
   return { user: { id, first_name: id === ADMIN_ID ? "Admin" : "User" }, valid: false };
 }
@@ -68,6 +66,12 @@ async function upsertProfile(u: TgUser) {
   }, { onConflict: "telegram_user_id" });
 }
 
+async function getCpm(): Promise<number> {
+  const sb = await getAdmin();
+  const { data } = await sb.from("app_settings").select("value_num").eq("key", "cpm_usd").maybeSingle();
+  return Number(data?.value_num ?? 1);
+}
+
 export const getMe = createServerFn({ method: "POST" })
   .inputValidator((d: { initData?: string; devUid?: number }) => d)
   .handler(async ({ data }) => {
@@ -76,15 +80,62 @@ export const getMe = createServerFn({ method: "POST" })
     const sb = await getAdmin();
     const { data: profile } = await sb.from("profiles").select("*").eq("telegram_user_id", user.id).single();
     const isAdmin = user.id === ADMIN_ID;
-    // stats
     const { data: channels } = await sb.from("telegram_channels").select("id, members_count").eq("owner_id", user.id);
     const channelCount = channels?.length ?? 0;
     const totalMembers = (channels ?? []).reduce((s, c: any) => s + (c.members_count || 0), 0);
     const { data: msgs } = await sb.from("sent_messages").select("views").eq("owner_id", user.id);
     const postCount = msgs?.length ?? 0;
     const totalViews = (msgs ?? []).reduce((s, m: any) => s + (m.views || 0), 0);
-    const earned = +(totalViews / 100 * 0.05).toFixed(4);
-    return { user, isAdmin, profile, stats: { channelCount, totalMembers, postCount, totalViews, earned } };
+    const cpm = await getCpm();
+    const earned = +((totalViews / 1000) * cpm).toFixed(4);
+    return { user, isAdmin, profile, cpm, stats: { channelCount, totalMembers, postCount, totalViews, earned } };
+  });
+
+export const getSettings = createServerFn({ method: "GET" }).handler(async () => {
+  const sb = await getAdmin();
+  const { data } = await sb.from("app_settings").select("*");
+  const map: Record<string, any> = {};
+  (data ?? []).forEach((r: any) => { map[r.key] = r.value_num ?? r.value_text; });
+  return { cpm_usd: Number(map.cpm_usd ?? 1) };
+});
+
+export const setCpm = createServerFn({ method: "POST" })
+  .inputValidator((d: { cpm: number; initData?: string; devUid?: number }) => d)
+  .handler(async ({ data }) => {
+    const { user } = resolveUser(data.initData, data.devUid);
+    if (user.id !== ADMIN_ID) throw new Error("Forbidden");
+    const cpm = Math.max(0.8, Math.min(1, Number(data.cpm)));
+    const sb = await getAdmin();
+    await sb.from("app_settings").upsert({ key: "cpm_usd", value_num: cpm, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    return { cpm };
+  });
+
+export const syncViews = createServerFn({ method: "POST" })
+  .inputValidator((d: { initData?: string; devUid?: number }) => d)
+  .handler(async ({ data }) => {
+    // Telegram Bot API doesn't expose post view counts. We estimate using
+    // member counts of the destination channel (typical organic reach proxy)
+    // and never lower an existing higher count (e.g. real click counts).
+    const { user } = resolveUser(data.initData, data.devUid);
+    const isAdmin = user.id === ADMIN_ID;
+    const sb = await getAdmin();
+    let q = sb.from("sent_messages").select("id, channel_id, views, clicks, owner_id");
+    if (!isAdmin) q = q.eq("owner_id", user.id);
+    const { data: rows } = await q;
+    if (!rows?.length) return { updated: 0 };
+    const channelIds = Array.from(new Set(rows.map((r: any) => r.channel_id).filter(Boolean)));
+    const { data: chs } = await sb.from("telegram_channels").select("id, members_count").in("id", channelIds);
+    const memberMap: Record<string, number> = {};
+    (chs ?? []).forEach((c: any) => { memberMap[c.id] = c.members_count || 0; });
+    let updated = 0;
+    for (const r of rows as any[]) {
+      const est = Math.max(r.views || 0, r.clicks || 0, memberMap[r.channel_id] || 0);
+      if (est !== r.views) {
+        await sb.from("sent_messages").update({ views: est }).eq("id", r.id);
+        updated++;
+      }
+    }
+    return { updated };
   });
 
 export const addChannel = createServerFn({ method: "POST" })
@@ -141,7 +192,6 @@ export const listChannels = createServerFn({ method: "POST" })
     if (!isAdmin) q = q.eq("owner_id", user.id);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    // attach per-channel post count + views for owners
     const ids = (rows ?? []).map((r: any) => r.id);
     let counts: Record<string, { posts: number; views: number }> = {};
     if (ids.length) {
@@ -176,6 +226,7 @@ export const broadcast = createServerFn({ method: "POST" })
     buttonText?: string | null;
     buttonUrl?: string | null;
     channelIds?: string[];
+    siteOrigin?: string;
     initData?: string;
     devUid?: number;
   }) => d)
@@ -190,14 +241,30 @@ export const broadcast = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!channels?.length) throw new Error("No channels selected.");
 
-    const reply_markup = data.buttonText && data.buttonUrl
-      ? { inline_keyboard: [[{ text: data.buttonText, url: data.buttonUrl }]] }
-      : undefined;
-
+    const origin = (data.siteOrigin || "").replace(/\/$/, "");
     const results: { chat_id: string; ok: boolean; error?: string }[] = [];
 
     for (const ch of channels) {
       try {
+        // Pre-insert sent_messages row so the button URL can carry its id
+        let trackingUrl: string | null = null;
+        let preRow: any = null;
+        if (data.buttonText && data.buttonUrl && origin) {
+          const { data: ins } = await sb.from("sent_messages").insert({
+            owner_id: ch.owner_id || user.id,
+            channel_id: ch.id,
+            chat_id: ch.chat_id,
+            text: data.text || null,
+            button_url: data.buttonUrl,
+          }).select().single();
+          preRow = ins;
+          if (ins) trackingUrl = `${origin}/api/public/t/${ins.id}`;
+        }
+
+        const reply_markup = data.buttonText && data.buttonUrl
+          ? { inline_keyboard: [[{ text: data.buttonText, url: trackingUrl || data.buttonUrl }]] }
+          : undefined;
+
         let resp: any;
         if (data.imageBase64) {
           const b64 = data.imageBase64.includes(",") ? data.imageBase64.split(",")[1] : data.imageBase64;
@@ -220,13 +287,20 @@ export const broadcast = createServerFn({ method: "POST" })
         }
         const ok = !!resp.ok;
         if (ok) {
-          await sb.from("sent_messages").insert({
-            owner_id: ch.owner_id || user.id,
-            channel_id: ch.id,
-            chat_id: ch.chat_id,
-            message_id: resp.result?.message_id || null,
-            text: data.text || null,
-          });
+          if (preRow) {
+            await sb.from("sent_messages").update({ message_id: resp.result?.message_id || null }).eq("id", preRow.id);
+          } else {
+            await sb.from("sent_messages").insert({
+              owner_id: ch.owner_id || user.id,
+              channel_id: ch.id,
+              chat_id: ch.chat_id,
+              message_id: resp.result?.message_id || null,
+              text: data.text || null,
+              button_url: data.buttonUrl || null,
+            });
+          }
+        } else if (preRow) {
+          await sb.from("sent_messages").delete().eq("id", preRow.id);
         }
         results.push({ chat_id: ch.chat_id, ok, error: ok ? undefined : resp.description });
       } catch (e: any) {

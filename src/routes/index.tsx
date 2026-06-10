@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import {
   addChannel, listChannels, deleteChannel, broadcast,
-  listPosts, savePost, deletePost, getMe,
+  listPosts, savePost, deletePost, getMe, setCpm, syncViews,
 } from "@/lib/telegram.functions";
 
 export const Route = createFileRoute("/")({
@@ -63,6 +63,8 @@ function Index() {
   const listPostsFn = useServerFn(listPosts);
   const savePostFn = useServerFn(savePost);
   const delPostFn = useServerFn(deletePost);
+  const setCpmFn = useServerFn(setCpm);
+  const syncViewsFn = useServerFn(syncViews);
 
   const { data: me } = useQuery({
     queryKey: ["me", initData],
@@ -101,6 +103,19 @@ function Index() {
   });
 
   const [editId, setEditId] = useState<string | null>(null);
+  const [cpmInput, setCpmInput] = useState<string>("");
+  useEffect(() => { if (me?.cpm != null) setCpmInput(String(me.cpm)); }, [me?.cpm]);
+
+  const cpmMut = useMutation({
+    mutationFn: (cpm: number) => setCpmFn({ data: { cpm, initData } }),
+    onSuccess: () => { toast.success("CPM updated"); qc.invalidateQueries({ queryKey: ["me"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const syncMut = useMutation({
+    mutationFn: () => syncViewsFn({ data: { initData } }),
+    onSuccess: (r: any) => { toast.success(`Synced ${r.updated} posts`); qc.invalidateQueries({ queryKey: ["me"] }); qc.invalidateQueries({ queryKey: ["channels"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
   const [text, setText] = useState("");
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -134,6 +149,7 @@ function Index() {
     mutationFn: () => sendFn({ data: {
       text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null,
       channelIds: Array.from(selectedChannels), initData,
+      siteOrigin: typeof window !== "undefined" ? window.location.origin : "",
     } }),
     onSuccess: (res) => {
       const ok = res.results.filter((r) => r.ok).length;
@@ -223,7 +239,7 @@ function Index() {
                   <span className="text-xs uppercase tracking-wider">Wallet Balance</span>
                 </div>
                 <p className="text-4xl font-bold tracking-tight">${balance.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground mt-1">Earn $0.05 for every 100 views</p>
+                <p className="text-xs text-muted-foreground mt-1">CPM ${(me?.cpm ?? 1).toFixed(2)} · earn per 1,000 views</p>
                 <div className="grid grid-cols-2 gap-2 mt-4">
                   <Button variant="outline" className="bg-white/5 border-white/20 hover:bg-white/10" onClick={() => toast.info("Deposit — coming soon")}>
                     <ArrowDownToLine className="h-4 w-4 mr-1" /> Deposit
@@ -246,12 +262,43 @@ function Index() {
             <Card className="border-white/10 bg-white/5 backdrop-blur">
               <CardContent className="p-4 flex items-center gap-3">
                 <TrendingUp className="h-5 w-5 text-emerald-400" />
-                <div className="text-sm">
+                <div className="text-sm flex-1">
                   <p className="font-medium">Earnings from views</p>
                   <p className="text-xs text-muted-foreground">${stats.earned.toFixed(4)} from {stats.totalViews.toLocaleString()} views</p>
                 </div>
+                <Button size="sm" variant="outline" className="bg-white/5 border-white/20"
+                  disabled={syncMut.isPending} onClick={() => syncMut.mutate()}>
+                  {syncMut.isPending ? "Syncing..." : "Sync views"}
+                </Button>
               </CardContent>
             </Card>
+
+            {isAdmin && (
+              <Card className="border-amber-400/20 bg-gradient-to-br from-amber-500/10 to-pink-500/10 backdrop-blur">
+                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-amber-300" />CPM rate</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Rate paid per 1,000 views. Allowed: $0.80 – $1.00</p>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-sm text-muted-foreground">$</span>
+                    <Input type="number" step="0.01" min="0.8" max="1" value={cpmInput}
+                      onChange={(e) => setCpmInput(e.target.value)}
+                      className="bg-white/5 border-white/10" />
+                    <Button size="sm" disabled={cpmMut.isPending} onClick={() => cpmMut.mutate(Number(cpmInput))}
+                      className="bg-gradient-to-r from-amber-500 to-pink-500 border-0">
+                      Save
+                    </Button>
+                  </div>
+                  <div className="flex gap-1.5 pt-1">
+                    {[0.8, 0.9, 1.0].map((v) => (
+                      <Button key={v} size="sm" variant="outline" className="bg-white/5 border-white/20 h-7 text-xs"
+                        onClick={() => { setCpmInput(String(v)); cpmMut.mutate(v); }}>
+                        ${v.toFixed(2)}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* CHANNELS */}
