@@ -103,6 +103,19 @@ function Index() {
   });
 
   const [editId, setEditId] = useState<string | null>(null);
+  const [cpmInput, setCpmInput] = useState<string>("");
+  useEffect(() => { if (me?.cpm != null) setCpmInput(String(me.cpm)); }, [me?.cpm]);
+
+  const cpmMut = useMutation({
+    mutationFn: (cpm: number) => setCpmFn({ data: { cpm, initData } }),
+    onSuccess: () => { toast.success("CPM updated"); qc.invalidateQueries({ queryKey: ["me"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const syncMut = useMutation({
+    mutationFn: () => syncViewsFn({ data: { initData } }),
+    onSuccess: (r: any) => { toast.success(`Synced ${r.updated} posts`); qc.invalidateQueries({ queryKey: ["me"] }); qc.invalidateQueries({ queryKey: ["channels"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
   const [text, setText] = useState("");
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
