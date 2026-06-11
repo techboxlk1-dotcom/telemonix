@@ -14,6 +14,140 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_campaigns: {
+        Row: {
+          advertiser_id: number
+          approved_at: string | null
+          budget_usd: number
+          button_text: string
+          button_url: string
+          category_id: string | null
+          click_rate_usd: number
+          clicks_count: number
+          completed_at: string | null
+          created_at: string
+          id: string
+          image_base64: string | null
+          rejection_reason: string | null
+          spent_usd: number
+          status: string
+          target_clicks: number
+          target_views: number
+          text: string
+          updated_at: string
+          view_rate_usd: number
+          views_count: number
+          watermark: boolean
+        }
+        Insert: {
+          advertiser_id: number
+          approved_at?: string | null
+          budget_usd?: number
+          button_text: string
+          button_url: string
+          category_id?: string | null
+          click_rate_usd?: number
+          clicks_count?: number
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          image_base64?: string | null
+          rejection_reason?: string | null
+          spent_usd?: number
+          status?: string
+          target_clicks?: number
+          target_views?: number
+          text?: string
+          updated_at?: string
+          view_rate_usd?: number
+          views_count?: number
+          watermark?: boolean
+        }
+        Update: {
+          advertiser_id?: number
+          approved_at?: string | null
+          budget_usd?: number
+          button_text?: string
+          button_url?: string
+          category_id?: string | null
+          click_rate_usd?: number
+          clicks_count?: number
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          image_base64?: string | null
+          rejection_reason?: string | null
+          spent_usd?: number
+          status?: string
+          target_clicks?: number
+          target_views?: number
+          text?: string
+          updated_at?: string
+          view_rate_usd?: number
+          views_count?: number
+          watermark?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_campaigns_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_placements: {
+        Row: {
+          campaign_id: string
+          channel_id: string
+          chat_id: string
+          clicks: number
+          deleted_at: string | null
+          id: string
+          message_id: number | null
+          sent_at: string
+          views: number
+        }
+        Insert: {
+          campaign_id: string
+          channel_id: string
+          chat_id: string
+          clicks?: number
+          deleted_at?: string | null
+          id?: string
+          message_id?: number | null
+          sent_at?: string
+          views?: number
+        }
+        Update: {
+          campaign_id?: string
+          channel_id?: string
+          chat_id?: string
+          clicks?: number
+          deleted_at?: string | null
+          id?: string
+          message_id?: number | null
+          sent_at?: string
+          views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_placements_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_placements_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "telegram_channels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_settings: {
         Row: {
           key: string
@@ -35,36 +169,174 @@ export type Database = {
         }
         Relationships: []
       }
+      categories: {
+        Row: {
+          created_at: string
+          emoji: string | null
+          id: string
+          name: string
+          slug: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          name: string
+          slug: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          name?: string
+          slug?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      earnings_ledger: {
+        Row: {
+          amount_usd: number
+          campaign_id: string | null
+          channel_id: string | null
+          created_at: string
+          id: string
+          type: string
+          user_id: number
+        }
+        Insert: {
+          amount_usd: number
+          campaign_id?: string | null
+          channel_id?: string | null
+          created_at?: string
+          id?: string
+          type: string
+          user_id: number
+        }
+        Update: {
+          amount_usd?: number
+          campaign_id?: string | null
+          channel_id?: string | null
+          created_at?: string
+          id?: string
+          type?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "earnings_ledger_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "earnings_ledger_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "telegram_channels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          read: boolean
+          title: string
+          user_id: number
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          read?: boolean
+          title: string
+          user_id: number
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          read?: boolean
+          title?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
+          advertiser_balance_usd: number
           balance_usd: number
           created_at: string
           first_name: string | null
           last_name: string | null
+          mode: string
+          onboarded: boolean
           photo_url: string | null
+          publisher_balance_usd: number
+          referral_code: string | null
+          referrer_id: number | null
           telegram_user_id: number
           updated_at: string
           username: string | null
         }
         Insert: {
+          advertiser_balance_usd?: number
           balance_usd?: number
           created_at?: string
           first_name?: string | null
           last_name?: string | null
+          mode?: string
+          onboarded?: boolean
           photo_url?: string | null
+          publisher_balance_usd?: number
+          referral_code?: string | null
+          referrer_id?: number | null
           telegram_user_id: number
           updated_at?: string
           username?: string | null
         }
         Update: {
+          advertiser_balance_usd?: number
           balance_usd?: number
           created_at?: string
           first_name?: string | null
           last_name?: string | null
+          mode?: string
+          onboarded?: boolean
           photo_url?: string | null
+          publisher_balance_usd?: number
+          referral_code?: string | null
+          referrer_id?: number | null
           telegram_user_id?: number
           updated_at?: string
           username?: string | null
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          created_at: string
+          id: string
+          referred_id: number
+          referrer_id: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          referred_id: number
+          referrer_id: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          referred_id?: number
+          referrer_id?: number
         }
         Relationships: []
       }
@@ -104,6 +376,7 @@ export type Database = {
       sent_messages: {
         Row: {
           button_url: string | null
+          campaign_id: string | null
           channel_id: string | null
           chat_id: string
           clicks: number
@@ -116,6 +389,7 @@ export type Database = {
         }
         Insert: {
           button_url?: string | null
+          campaign_id?: string | null
           channel_id?: string | null
           chat_id: string
           clicks?: number
@@ -128,6 +402,7 @@ export type Database = {
         }
         Update: {
           button_url?: string | null
+          campaign_id?: string | null
           channel_id?: string | null
           chat_id?: string
           clicks?: number
@@ -140,6 +415,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "sent_messages_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sent_messages_channel_id_fkey"
             columns: ["channel_id"]
             isOneToOne: false
@@ -150,33 +432,56 @@ export type Database = {
       }
       telegram_channels: {
         Row: {
+          accumulated_usd: number
+          category_id: string | null
           chat_id: string
           created_at: string
           id: string
           members_count: number
           owner_id: number | null
+          rejection_reason: string | null
+          reviewed_at: string | null
+          status: string
           title: string
           username: string | null
         }
         Insert: {
+          accumulated_usd?: number
+          category_id?: string | null
           chat_id: string
           created_at?: string
           id?: string
           members_count?: number
           owner_id?: number | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          status?: string
           title: string
           username?: string | null
         }
         Update: {
+          accumulated_usd?: number
+          category_id?: string | null
           chat_id?: string
           created_at?: string
           id?: string
           members_count?: number
           owner_id?: number | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          status?: string
           title?: string
           username?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "telegram_channels_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
