@@ -1,99 +1,81 @@
-# TeleMonix Ad Network — Implementation Plan
+# TeleMonix Pro Upgrade Plan
 
-This is a large rebuild of the mini app into a two-sided ad network. I'll ship it in clearly separated phases so we can review each one. Please confirm the plan (and answer the few questions at the end) before I start.
+ඔයාගේ requirements ගොඩක් වැඩි. මම මේක phases 5 කට කඩලා හදනවා. එක එක phase එක ඉවර වුණාම review කරන්න පුළුවන්. මුලින් plan එක confirm කරන්න.
 
-## 1. Branding & Bot
-- Rename app → **TeleMonix**. New bot username: `teleMonix_bot`.
-- Need a new `TELEGRAM_BOT_TOKEN` secret for the new bot (current token belongs to the old bot). I'll ask for it via the secret tool when we start.
-- Generate a TeleMonix logo asset + animated splash/loading screen on mini app open.
-- Polished gradient theme, motion (framer-style CSS animations), glassmorphism cards.
+## Phase 1 — Foundations & Branding
 
-## 2. Two Modes: Publisher & Advertiser
-- First open → mode picker (Publisher / Advertiser), stored in profile.
-- Top switcher to flip between modes anytime.
-- Each mode has its own **wallet** (publisher_balance, advertiser_balance) and its own tabs.
+- **Logo:** ඔයා upload කරපු TeleMonix logo එක replace කරනවා (`src/assets/telemonix-logo.png`).
+- **Splash + Dashboard picker:** Mini app open වෙද්දි සෑම වතාවකම logo splash → mode picker dashboard (Publisher / Advertiser) පෙන්වනවා, mini app විස්තර + ad network features ඇතුළත්ව. Selection පස්සේ තමයි role tabs ඔපන් වෙන්නේ. Top-bar එකේ mode switcher.
+- **Design refresh:** Glassmorphism + gradient cards, animated banners, color-coded badges, larger typography, section headers, professional fintech look.
+- **GitHub/Netlify compat:** `netlify.toml` + SPA fallback, `_redirects`, README, build script. (TanStack Start server functions → Netlify Functions adapter explanation: server routes need Netlify/Cloudflare adapter — මම Netlify adapter wire කරනවා. GitHub repo වලට fit වෙන්න `.gitignore`, env example file එකක්.)
 
-## 3. Publisher Mode
-Tabs: Home · Channels · Refer · Guide
-- **Home**: total earnings, withdraw/deposit (coming soon), "Add my channel" CTA, monetization explainer, channel count + total members. No views/clicks/post-count shown to users.
-- **Channels**:
-  - Add channel → status `pending_review`. Admin must approve before it becomes `active` and earns.
-  - Each channel row shows: status badge, member count, **accumulated balance from that channel**, category.
-  - Category selector when adding (Tech, News, Crypto, Entertainment, Education, Business, Lifestyle, Other — editable by admin).
-  - After adding, bot DMs the user a pre-made "About TeleMonix" promo post they can forward to their channel; admin reviews quality and approves.
-  - If bot is removed from channel → channel set `inactive`, bot sends DM notification with channel name + "Open Mini App" button explaining re-add.
-- **Refer**: unique referral link, total referrals, earnings (10% commission on referred users' earnings forever), history list.
-- **Guide**: full image+text guide on how to monetize a Telegram channel via TeleMonix.
+## Phase 2 — Tracking & Counting Engine (the core bug fixes)
 
-## 4. Advertiser Mode
-Tabs: Home · Create Ad · Manage Ads · Wallet
-- **Home**: total channels in network, total members reachable, active campaigns, balance. Network explainer.
-- **Create Ad** (all required):
-  - Post text, image, button title, button URL (website/bot/mini app).
-  - Category select (aggregated from active channels' categories).
-  - Target views (min 100) + target clicks (min 100).
-  - Pricing shown live: **$1 per 1000 views + $10 per 1000 clicks** (rates editable by admin).
-  - Total cost deducted from advertiser wallet on submit → status `pending_review`.
-- **Manage Ads**: each campaign shows views/clicks progress bars, status (pending/active/complete), spend, remaining budget. Can top up views/clicks. On completion, bot auto-deletes all sent messages from channels.
-- **Wallet**: balance, deposit (coming soon).
+- **Admin posts send 0 bug:** sender flow එක debug කරලා fix කරනවා (current issue: send count 0). Send → DB write → progress refresh wire properly.
+- **Preview pane:** Admin post + Advertiser ad create flow වල live Telegram-style preview card (image, text, button) පෙන්වනවා.
+- **Per-user click dedup:** `ad_clicks` (user_id, ad_id, source) unique table. Button click 1× + link click 1× = ONE click counted per user per ad. Already-clicked = no count. Auto-applied for both buttons සහ message links (link rewriting: text එකේ http(s) URLs auto-replace කරනවා tracker URLs වලට).
+- **Admin post tracking එකත් same:** CPM + CPC fields admin post compose එකේ. Watermark default ON, admin post එකේ විතරක් remove toggle. Ad posts වල watermark force ON.
+- **Auto bot/API view+click counting:** scheduled cron (every 5 min) — channel post views Telegram API (`forwardMessages` + `getChat` member-count + click ratio formula in your VR algorithm) භාවිතා කරලා estimate update + recorded clicks atomic. Value → publisher earnings auto-credit (admin posts: admin defined CPM/CPC × 65%; ad posts: advertiser CPM/CPC × 65%).
+- **Auto-credit publisher balances** to `profiles.publisher_balance_usd` + `earnings_ledger` rows.
 
-## 5. Admin (chat id 5419054691)
-Extra admin-only tabs: Settings · Channel Reviews · Ad Reviews
-- **Settings**: edit CPM range ($1–$5 display, "earn up to $1–$5 CPM"), per-1000-view rate, per-1000-click rate, referral % (default 10), publisher revenue share (default 65%), watermark toggle.
-- **Channel Reviews**: pending channels list with "View Channel" button + Approve/Reject.
-- **Ad Reviews**: preview each pending ad, Approve → begins distribution / Reject → refund.
-- Admin keeps existing Compose + Saved tabs (direct broadcasts) — separate from the ad network.
-- Admin can delete any bot-sent message from any channel via UI.
+## Phase 3 — Wallets, Deposit & Withdraw
 
-## 6. Ad Distribution Engine
-- When an ad is approved, it enters a queue. A scheduler picks matching `active` channels (by category) and posts daily at a paced rate (more channels = faster completion).
-- One ad → one shared tracking link `/api/public/t/:adId?c=:channelId`. Clicks from any channel/repost accumulate on the same ad. Per-channel breakdown stored for publisher payout.
-- Each post tracked in `ad_placements` (ad_id, channel_id, message_id, views, clicks, sent_at).
-- On reaching either views OR clicks target → ad marked `complete`, bot deletes every placement message, no more posting.
-- Top-ups reopen the campaign and resume posting.
+- **Advertiser:** Deposit-only tab. Public side: Withdraw-only.
+- **Deposit page:**
+  - USDT BEP20: `0x082679f6cD88A25a17b58979AC72a500b1Aa1b9c`
+  - TRX TRC20: `THK7E2wEz6SjakNM3Z7jigJdU9ixKJPDEo`
+  - TON: `UQA3agalrvn_PYTiVYvaS55qthZFxnLrjQm0tUNb2lQ3A9pL`
+  - Min $5. Live price (CoinGecko API) → user enters USD, shows token amount.
+  - Auto-confirm: on-chain watcher (BSC/Tron/TON public RPCs) checks deposit address for incoming tx matching `(amount ± tolerance, memo/tag = user_id short code)`. Confirmed → balance add → notification. Cron every 2 min.
+- **Withdraw:** USDT BEP20, TRX TRC20, TON (memo optional). Min $10. History list. Status: pending / approved / paid / rejected. Admin approve manually first; auto-payout toggle later.
+- **Withdraw history + Deposit history** for user.
 
-## 7. Real View Counting (the hard part)
-The Bot API does not expose channel post views directly. Two options:
+## Phase 4 — Admin Pro Dashboard
 
-**Option A (recommended):** Use a **Telegram User Bot (MTProto)** via a small Python worker (Telethon/Pyrogram) running outside the Worker runtime — periodically reads `channel.messages.getMessages` which returns real `views`. Requires user to provide a Telegram API ID + API hash + a phone number / session string. Most accurate; this is what every real ad network does.
+Dedicated admin (chat 5419054691) section with sidebar-style tabs:
 
-**Option B:** Approximate via members_count × engagement rate (15–40% sampled per channel based on past clicks) + click-driven floor. Cheap, no extra infra, but estimated.
+1. **Overview** — total earnings, users, active ads, views, clicks, pending withdrawals, charts.
+2. **Users** — list, balances, total clicks/views, quality score, ban/reset/credit-balance. **Direct message + add balance** to any user.
+3. **Channels** — admin-added channel list, remove channel, set per-channel CPM/CPC override (overrides the 65% default).
+4. **Ads Manager** — review, approve, pause, edit ads. Targeting filters.
+5. **Channel Stats** — per channel: posts sent, views, clicks, CPM, CPC, revenue. Separate tab.
+6. **Withdraw Management** — pending/approved/paid/rejected, approve/reject/mark paid, Telegram notification to user.
+7. **Deposit Management** — auto/manual confirm, history.
+8. **Analytics** — CPM/CPC per channel, top channels, fraud detection (duplicate IP, fast clicks).
+9. **Settings** — default CPM, CPC, min withdraw, fraud level, watermark default.
 
-I'll implement **B** now as a realistic estimator (50–500 views per 1000 subs, capped by member count, scaled by elapsed time + click ratio) and wire the schema so **A** can be added later as a sync worker. Let me know if you want me to set up Option A — I'll need API credentials.
+Admin gets Telegram notifications: new withdraw, new deposit, fraud alert, daily summary.
 
-## 8. Click Tracking (100% accurate)
-- Inline button URL = `/api/public/t/:adId?c=:channelId&u=:userId`.
-- Endpoint: increments click counters atomically (ad total, per-channel, unique-by-user if `u` set), then 302 redirects to advertiser URL.
-- In mini app: clicking the button opens link via `Telegram.WebApp.openLink(url)` then calls `WebApp.close()`.
+## Phase 5 — Ad Engine, Targeting, FAQ
 
-## 9. Watermark
-- Per-post toggle "Add TeleMonix watermark" (default ON for ads, OFF for admin direct broadcasts).
-- When ON: appends `\n\n— via @teleMonix_bot · Monetize your channel` to the post text.
+- **Channel add:** country + language + category selectors. Min 200K subscribers enforcement (validation message). Admin guidance image (the Telegram "Add Bot as Admin / Manage Messages" screenshot ඔයා upload කරපුව) + step-by-step guide pop-up.
+- **Channel & Ad pending message:** user adds channel → bot DMs user the promo post (NOT to channel). DM result shown in UI.
+- **Ad targeting:** country + language + category. Distribution engine matches only eligible channels.
+- **48-hour fallback:** if ad target views not reached in 48h, expand to other channels (drop targeting).
+- **Auto error recovery:** retry queue for failed Telegram API calls (exponential backoff). Error logs visible in admin.
+- **Referral link fix:** `https://t.me/teleMonix_bot?startapp=ref_<code>`.
+- **FAQ tab** for both publisher & advertiser modes — full guide including monetization, deposit/withdraw, CPM/CPC explanation (your Sinhala explanation reused).
+- **Analytics for users:** per-channel CPM, CPC, clicks, views shown to publisher.
 
-## 10. Revenue Split
-- Per click event with value `V`: publisher (channel owner) earns `V × 0.65`, referrer earns `V × 0.10` of publisher's share, platform keeps remainder.
-- All accruals written to `earnings_ledger` (user_id, channel_id, ad_id, type, amount, created_at).
+---
 
-## 11. Database Changes (one migration)
-New tables: `categories`, `ad_campaigns`, `ad_placements`, `referrals`, `earnings_ledger`, `notifications`.
-Alter `profiles`: `mode`, `referrer_id`, `referral_code`, `advertiser_balance_usd`, `publisher_balance_usd`.
-Alter `telegram_channels`: `status` (pending/active/inactive), `category_id`, `accumulated_usd`.
-Alter `app_settings`: add `cpm_view_rate`, `cpm_click_rate`, `pub_share_pct`, `ref_pct`, `min_views`, `min_clicks`.
+## Technical notes (for me, not user-facing)
 
-## 12. Bot-Side Webhook Additions
-- Listen to `my_chat_member` updates → if bot kicked/demoted from a channel, set `inactive` and send owner the "re-add" DM with Open Mini App button.
-- Listen to channel posts (optional) for view sampling.
+- New tables: `ad_clicks` (dedup), `deposits`, `withdrawals`, `channel_stats`, `admin_messages`, `error_log`.
+- Alter `telegram_channels`: `country`, `language`, `cpm_override`, `cpc_override`, `subscribers_count`.
+- Alter `ad_campaigns`: `country[]`, `language[]`, `cpc_rate`, expanded_at.
+- Alter `sent_messages`: add `cpm`, `cpc`, `watermark`, dedup-aware counters.
+- Cron jobs (pg_cron): distribute (5m), view-sync (5m), deposit-watcher (2m), withdraw-notify (5m), expand-targeting (1h).
+- Link rewriting in messages: regex extract URLs → store mapping → replace with tracker URLs before send.
+- Netlify deploy: add adapter, build config, document GitHub workflow.
 
-## Technical notes
-- Stack stays TanStack Start + Supabase (Lovable Cloud).
-- Distribution scheduler: pg_cron job every 5 min calling a public `/api/public/cron/distribute` endpoint (HMAC-protected).
-- All money math in `numeric(12,4)` USD.
-- Toasts via existing sonner.
+---
 
-## Questions before I build
-1. **Views accuracy:** ship the estimator now (Option B), or wait for you to provide Telegram API credentials for Option A?
-2. **New bot token** for `teleMonix_bot` — I'll request it as a secret when you confirm. The old `TELEGRAM_BOT_TOKEN` will be overwritten. OK?
-3. **Logo:** I'll generate a TeleMonix logo (purple/cyan gradient, modern fintech feel). Any preferences (colors, style)?
-4. **Existing data:** wipe current `saved_posts` / `sent_messages` / channels, or migrate them?
+## Questions
 
-This is ~2–3 large implementation passes. After you confirm, I'll execute phase-by-phase, starting with branding + DB migration + mode picker, then publisher flow, then advertiser flow, then admin reviews + distribution engine.
+1. **Auto deposit confirmation** needs blockchain RPC access — BSCScan API key, TronGrid key, TonAPI key. ඔයාට මේවා දාන්න පුළුවන්ද, නැතිනම් free public endpoints (rate-limited) use කරන්නද? Free OK කිව්වොත් මම free use කරනවා, පස්සේ keys add කරන්න පුළුවන්.
+2. **GitHub/Netlify:** ඔයාට මේක දැනට Lovable hosting වෙනුවට Netlify වලට move කරන්න ඕනේද, නැතිනම් just compatibility (Lovable තවම main, Netlify backup option)?
+3. **200K subscribers minimum** strict block කරන්නද, නැතිනම් warning + admin override?
+4. **Auto-payout** withdraw — manual approval only (Phase 1), auto-payout later wire? Confirm.
+
+Confirm කරාම මම phase order එකේ build කරන්න පටන් ගන්නවා. ඔක්කොම එක මැසේජ් එකකින් කරන්න බෑ — 5 large passes වෙයි.
