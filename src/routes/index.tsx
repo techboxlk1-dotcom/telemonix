@@ -60,6 +60,20 @@ function openLink(url: string) {
   else window.open(url, "_blank");
 }
 
+// Telegram-style preview card used in both admin compose and advertiser builder.
+function PostPreview({ text, imageBase64, buttonText, watermark, botUsername = "teleMonix_bot" }: { text: string; imageBase64?: string | null; buttonText?: string; watermark?: boolean; botUsername?: string }) {
+  const finalText = (text || "") + (watermark ? `\n\n— via @${botUsername} · Monetize your Telegram channel` : "");
+  return (
+    <div className="rounded-2xl bg-[#17212b] border border-white/10 p-3 max-w-[320px] shadow-lg">
+      <div className="flex items-center gap-2 mb-2"><div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500" /><div><p className="text-[11px] font-medium text-white">@{botUsername}</p><p className="text-[9px] text-white/40">Channel · just now</p></div></div>
+      {imageBase64 && <img src={imageBase64} alt="" className="rounded-lg w-full max-h-40 object-cover mb-2" />}
+      <p className="text-[13px] text-white whitespace-pre-wrap break-words">{finalText || <span className="text-white/30">Your message preview…</span>}</p>
+      {buttonText && <div className="mt-2 rounded-md bg-[#2b5278] text-white text-center text-xs font-medium py-2">{buttonText}</div>}
+    </div>
+  );
+}
+
+
 function Splash() {
   return (
     <div className="fixed inset-0 z-50 bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#0f172a] flex flex-col items-center justify-center">
@@ -511,9 +525,13 @@ function CreateAdForm({ me, initData }: any) {
             <div><Label className="text-xs">Target views (min {me.settings.min_views})</Label><Input type="number" value={targetViews} onChange={(e) => setTargetViews(+e.target.value)} className="bg-white/5 border-white/10" /></div>
             <div><Label className="text-xs">Target clicks (min {me.settings.min_clicks})</Label><Input type="number" value={targetClicks} onChange={(e) => setTargetClicks(+e.target.value)} className="bg-white/5 border-white/10" /></div>
           </div>
-          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-            <div className="flex items-center gap-2"><Switch checked={watermark} onCheckedChange={setWatermark} /><span className="text-sm">TeleMonix watermark</span></div>
-            <span className="text-[10px] text-muted-foreground">@{me.bot_username}</span>
+          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10 opacity-70">
+            <div className="flex items-center gap-2"><Switch checked={true} disabled /><span className="text-sm">TeleMonix watermark</span></div>
+            <span className="text-[10px] text-muted-foreground">Required on ads</span>
+          </div>
+          <div>
+            <Label className="text-xs mb-1.5 block">Live preview</Label>
+            <PostPreview text={text} imageBase64={imageBase64} buttonText={buttonText} watermark={true} botUsername={me.bot_username} />
           </div>
           <div className="rounded-lg p-3 bg-gradient-to-r from-purple-500/15 to-cyan-500/15 border border-white/10 flex items-center justify-between">
             <div><p className="text-xs text-muted-foreground">Total cost</p><p className="text-2xl font-bold">${cost.toFixed(2)}</p></div>
@@ -525,6 +543,7 @@ function CreateAdForm({ me, initData }: any) {
     </>
   );
 }
+
 
 function ManageAds({ me, initData }: any) {
   const listFn = useServerFn(listCampaigns);
@@ -676,7 +695,6 @@ function AdminAds({ initData }: any) {
 }
 
 function AdminCompose({ initData }: any) {
-  const qc = useQueryClient();
   const listFn = useServerFn(listChannels);
   const sendFn = useServerFn(broadcast);
   const { data: channels = [] } = useQuery({ queryKey: ["all-channels"], queryFn: () => listFn({ data: { initData, scope: "all" } }) });
@@ -685,41 +703,72 @@ function AdminCompose({ initData }: any) {
   const [buttonUrl, setButtonUrl] = useState("");
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [watermark, setWatermark] = useState(true);
+  const [cpm, setCpm] = useState(1);
+  const [cpc, setCpc] = useState(0.05);
+  const [lastResult, setLastResult] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const sendMut = useMutation({
-    mutationFn: () => sendFn({ data: { text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null, channelIds: Array.from(selected), initData, siteOrigin: window.location.origin } }),
-    onSuccess: (r) => { const ok = r.results.filter((x: any) => x.ok).length; toast.success(`Sent to ${ok} channels`); },
+    mutationFn: () => sendFn({ data: { text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null, channelIds: Array.from(selected), initData, siteOrigin: window.location.origin, watermark, cpm, cpc } }),
+    onSuccess: (r: any) => {
+      setLastResult(r);
+      if (r.okCount === 0) toast.error(`Sent to 0 channels. ${r.results?.[0]?.error || "Check bot admin rights."}`);
+      else toast.success(`Sent to ${r.okCount}/${r.results.length} channels${r.failCount ? ` (${r.failCount} failed)` : ""}`);
+    },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const activeChannels = channels.filter((c: any) => c.status === "active");
 
   return (
     <>
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2"><CardTitle className="text-base">Admin broadcast (direct)</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          <Textarea placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[100px]" />
+          <Textarea placeholder="Message (HTML supported, URLs auto-tracked)" value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[100px]" />
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setImageBase64(r.result as string); r.readAsDataURL(f); }} />
-          {imageBase64 ? <img src={imageBase64} className="rounded max-h-32" /> : <Button variant="outline" className="w-full bg-white/5 border-white/20" onClick={() => fileRef.current?.click()}><ImageIcon className="h-4 w-4 mr-1" />Image</Button>}
+          {imageBase64 ? <div className="relative"><img src={imageBase64} className="rounded max-h-32" alt="" /><Button size="icon" variant="destructive" className="absolute top-1 right-1 h-6 w-6" onClick={() => setImageBase64(null)}><X className="h-3 w-3" /></Button></div> : <Button variant="outline" className="w-full bg-white/5 border-white/20" onClick={() => fileRef.current?.click()}><ImageIcon className="h-4 w-4 mr-1" />Image</Button>}
           <div className="grid grid-cols-2 gap-2">
             <Input placeholder="Button text" value={buttonText} onChange={(e) => setButtonText(e.target.value)} className="bg-white/5 border-white/10" />
             <Input placeholder="https://..." value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} className="bg-white/5 border-white/10" />
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label className="text-xs">CPM ($ / 1k views)</Label><Input type="number" step={0.1} value={cpm} onChange={(e) => setCpm(+e.target.value)} className="bg-white/5 border-white/10" /></div>
+            <div><Label className="text-xs">CPC ($ / click)</Label><Input type="number" step={0.01} value={cpc} onChange={(e) => setCpc(+e.target.value)} className="bg-white/5 border-white/10" /></div>
+          </div>
+          <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+            <div className="flex items-center gap-2"><Switch checked={watermark} onCheckedChange={setWatermark} /><span className="text-sm">Watermark</span></div>
+            <span className="text-[10px] text-muted-foreground">Admin-only toggle</span>
+          </div>
+          <div>
+            <Label className="text-xs mb-1.5 block">Live preview</Label>
+            <PostPreview text={text} imageBase64={imageBase64} buttonText={buttonText} watermark={watermark} />
+          </div>
           <div className="max-h-40 overflow-y-auto space-y-1 border border-white/10 rounded p-2">
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={selected.size === channels.length && channels.length > 0} onCheckedChange={(v) => setSelected(v ? new Set(channels.map((c: any) => c.id)) : new Set())} />All ({channels.length})</label>
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={selected.size === activeChannels.length && activeChannels.length > 0} onCheckedChange={(v) => setSelected(v ? new Set(activeChannels.map((c: any) => c.id)) : new Set())} />All active ({activeChannels.length})</label>
             {channels.map((c: any) => (
-              <label key={c.id} className="flex items-center gap-2 text-xs">
-                <Checkbox checked={selected.has(c.id)} onCheckedChange={(v) => { const s = new Set(selected); v ? s.add(c.id) : s.delete(c.id); setSelected(s); }} />
+              <label key={c.id} className={`flex items-center gap-2 text-xs ${c.status !== "active" ? "opacity-50" : ""}`}>
+                <Checkbox checked={selected.has(c.id)} onCheckedChange={(v) => { const s = new Set(selected); v ? s.add(c.id) : s.delete(c.id); setSelected(s); }} disabled={c.status !== "active"} />
                 {c.title} <Badge className="text-[9px] h-4 ml-auto">{c.status}</Badge>
               </label>
             ))}
           </div>
-          <Button className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 border-0" disabled={!text || !selected.size || sendMut.isPending} onClick={() => sendMut.mutate()}><Send className="h-4 w-4 mr-1" />Send</Button>
+          <Button className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 border-0" disabled={!text || !selected.size || sendMut.isPending} onClick={() => sendMut.mutate()}><Send className="h-4 w-4 mr-1" />Send to {selected.size}</Button>
+          {lastResult && (
+            <div className="rounded-lg border border-white/10 bg-white/5 p-2 space-y-1 text-[11px]">
+              <p className="font-medium">Result: {lastResult.okCount} ok · {lastResult.failCount} failed</p>
+              {lastResult.results.map((r: any, i: number) => (
+                <div key={i} className="flex items-center gap-2"><span className={r.ok ? "text-emerald-400" : "text-red-400"}>{r.ok ? "✓" : "✕"}</span><span>{r.channel_title}</span>{!r.ok && <span className="text-muted-foreground truncate">— {r.error}</span>}</div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </>
   );
 }
+
 
 function AdminSettings({ me, initData }: any) {
   const qc = useQueryClient();
