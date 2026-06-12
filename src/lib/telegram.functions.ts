@@ -572,28 +572,29 @@ export const distributeAds = createServerFn({ method: "POST" })
 
       for (const ch of candidates) {
         try {
-          // pre-insert placement to get id for tracking url
           const { data: placement } = await sb.from("ad_placements").insert({
             campaign_id: c.id, channel_id: ch.id, chat_id: ch.chat_id,
           }).select().single();
           if (!placement) continue;
-          const trackingUrl = `${origin}/api/public/t/${placement.id}?p=ad`;
-          const text = (c.text || "") + (c.watermark ? WATERMARK : "");
-          const reply_markup = { inline_keyboard: [[{ text: c.button_text, url: trackingUrl }]] };
+          const baseText = (c.text || "") + (c.watermark ? WATERMARK : "");
+          const { text: rewrittenText, map: linkMap } = rewriteLinks(baseText, origin, placement.id, "ad");
+          const buttonTracker = `${origin}/api/public/t/${placement.id}?p=ad&src=button`;
+          await sb.from("ad_placements").update({ link_map: linkMap }).eq("id", placement.id);
+          const reply_markup = { inline_keyboard: [[{ text: c.button_text, url: buttonTracker }]] };
           let resp: any;
           if (c.image_base64) {
             const b64 = c.image_base64.includes(",") ? c.image_base64.split(",")[1] : c.image_base64;
             const bin = Uint8Array.from(atob(b64), x => x.charCodeAt(0));
             const fd = new FormData();
             fd.append("chat_id", ch.chat_id);
-            fd.append("caption", text);
+            fd.append("caption", rewrittenText);
             fd.append("parse_mode", "HTML");
             fd.append("reply_markup", JSON.stringify(reply_markup));
             fd.append("photo", new Blob([bin], { type: "image/jpeg" }), "image.jpg");
             const r = await fetch(`${TG_API}/bot${token()}/sendPhoto`, { method: "POST", body: fd });
             resp = await r.json();
           } else {
-            resp = await tg("sendMessage", { chat_id: ch.chat_id, text, parse_mode: "HTML", reply_markup });
+            resp = await tg("sendMessage", { chat_id: ch.chat_id, text: rewrittenText, parse_mode: "HTML", reply_markup });
           }
           if (resp.ok) {
             await sb.from("ad_placements").update({ message_id: resp.result?.message_id || null }).eq("id", placement.id);
@@ -603,6 +604,7 @@ export const distributeAds = createServerFn({ method: "POST" })
           }
         } catch {}
       }
+
     }
     return { posted };
   });
