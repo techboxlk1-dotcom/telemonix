@@ -493,10 +493,17 @@ export const listPosts = createServerFn({ method: "GET" }).handler(async () => {
 });
 
 export const savePost = createServerFn({ method: "POST" })
-  .inputValidator((d: { id?: string | null; text: string; imageBase64?: string | null; buttonText?: string | null; buttonUrl?: string | null; buttonColor?: string | null }) => d)
+  .inputValidator((d: { id?: string | null; text: string; imageBase64?: string | null; buttonText?: string | null; buttonUrl?: string | null; buttonColor?: string | null; watermark?: boolean; cpm?: number; cpc?: number }) => d)
   .handler(async ({ data }) => {
     const sb = await getAdmin();
-    const payload = { text: data.text || "", image_base64: data.imageBase64 || null, button_text: data.buttonText || null, button_url: data.buttonUrl || null, button_color: data.buttonColor || null };
+    const payload = {
+      text: data.text || "", image_base64: data.imageBase64 || null,
+      button_text: data.buttonText || null, button_url: data.buttonUrl || null,
+      button_color: data.buttonColor || null,
+      watermark: data.watermark !== false,
+      cpm_usd: Number(data.cpm || 0),
+      cpc_usd: Number(data.cpc || 0),
+    };
     if (data.id) {
       const { data: row } = await sb.from("saved_posts").update(payload).eq("id", data.id).select().single();
       return row;
@@ -504,6 +511,7 @@ export const savePost = createServerFn({ method: "POST" })
     const { data: row } = await sb.from("saved_posts").insert(payload).select().single();
     return row;
   });
+
 
 export const deletePost = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
