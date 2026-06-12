@@ -410,6 +410,7 @@ export const broadcast = createServerFn({ method: "POST" })
     text: string; imageBase64?: string | null;
     buttonText?: string | null; buttonUrl?: string | null;
     channelIds?: string[]; siteOrigin?: string;
+    watermark?: boolean; cpm?: number; cpc?: number;
     initData?: string; devUid?: number;
   }) => d)
   .handler(async ({ data }) => {
@@ -422,22 +423,36 @@ export const broadcast = createServerFn({ method: "POST" })
     if (!channels?.length) throw new Error("No channels selected.");
 
     const origin = (data.siteOrigin || "").replace(/\/$/, "");
-    const results: { chat_id: string; ok: boolean; error?: string }[] = [];
+    const watermark = data.watermark !== false;
+    const cpm = Number(data.cpm || 0);
+    const cpc = Number(data.cpc || 0);
+    const results: { chat_id: string; channel_title: string; ok: boolean; error?: string }[] = [];
 
     for (const ch of channels) {
+      let preRow: any = null;
       try {
-        let trackingUrl: string | null = null;
-        let preRow: any = null;
-        if (data.buttonText && data.buttonUrl && origin) {
-          const { data: ins } = await sb.from("sent_messages").insert({
-            owner_id: ch.owner_id || user.id, channel_id: ch.id,
-            chat_id: ch.chat_id, text: data.text || null, button_url: data.buttonUrl,
-          }).select().single();
-          preRow = ins;
-          if (ins) trackingUrl = `${origin}/api/public/t/${ins.id}`;
-        }
-        const reply_markup = data.buttonText && data.buttonUrl
-          ? { inline_keyboard: [[{ text: data.buttonText, url: trackingUrl || data.buttonUrl }]] }
+        // Always pre-insert sent_message so we have an id for both button tracker AND link rewriting
+        const { data: ins, error: insErr } = await sb.from("sent_messages").insert({
+          owner_id: ch.owner_id || user.id, channel_id: ch.id,
+          chat_id: ch.chat_id, text: data.text || null,
+          button_url: data.buttonUrl || null,
+          watermark, cpm_usd: cpm, cpc_usd: cpc,
+        }).select().single();
+        if (insErr || !ins) throw new Error(insErr?.message || "DB insert failed");
+        preRow = ins;
+
+        const trackerId = ins.id;
+        const baseText = (data.text || "") + (watermark ? WATERMARK : "");
+        const { text: rewrittenText, map: linkMap } = origin
+          ? rewriteLinks(baseText, origin, trackerId, "post")
+          : { text: baseText, map: {} as Record<string, string> };
+        const buttonTracker = (origin && data.buttonText && data.buttonUrl)
+          ? `${origin}/api/public/t/${trackerId}?p=post&src=button`
+          : (data.buttonUrl || null);
+        await sb.from("sent_messages").update({ link_map: linkMap }).eq("id", trackerId);
+
+        const reply_markup = data.buttonText && buttonTracker
+          ? { inline_keyboard: [[{ text: data.buttonText, url: buttonTracker }]] }
           : undefined;
         let resp: any;
         if (data.imageBase64) {
@@ -445,28 +460,31 @@ export const broadcast = createServerFn({ method: "POST" })
           const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
           const fd = new FormData();
           fd.append("chat_id", ch.chat_id);
-          fd.append("caption", data.text || "");
+          fd.append("caption", rewrittenText);
           fd.append("parse_mode", "HTML");
           if (reply_markup) fd.append("reply_markup", JSON.stringify(reply_markup));
           fd.append("photo", new Blob([bin], { type: "image/jpeg" }), "image.jpg");
           const r = await fetch(`${TG_API}/bot${token()}/sendPhoto`, { method: "POST", body: fd });
           resp = await r.json();
         } else {
-          resp = await tg("sendMessage", { chat_id: ch.chat_id, text: data.text, parse_mode: "HTML", reply_markup });
+          resp = await tg("sendMessage", { chat_id: ch.chat_id, text: rewrittenText, parse_mode: "HTML", reply_markup });
         }
         const ok = !!resp.ok;
-        if (ok && preRow) {
-          await sb.from("sent_messages").update({ message_id: resp.result?.message_id || null }).eq("id", preRow.id);
-        } else if (!ok && preRow) {
-          await sb.from("sent_messages").delete().eq("id", preRow.id);
+        if (ok) {
+          await sb.from("sent_messages").update({ message_id: resp.result?.message_id || null }).eq("id", trackerId);
+        } else {
+          await sb.from("sent_messages").delete().eq("id", trackerId);
         }
-        results.push({ chat_id: ch.chat_id, ok, error: ok ? undefined : resp.description });
+        results.push({ chat_id: ch.chat_id, channel_title: ch.title, ok, error: ok ? undefined : resp.description });
       } catch (e: any) {
-        results.push({ chat_id: ch.chat_id, ok: false, error: e.message });
+        if (preRow) { try { await sb.from("sent_messages").delete().eq("id", preRow.id); } catch {} }
+        results.push({ chat_id: ch.chat_id, channel_title: ch.title, ok: false, error: e.message });
       }
     }
-    return { results };
+    const okCount = results.filter(r => r.ok).length;
+    return { results, okCount, failCount: results.length - okCount };
   });
+
 
 export const listPosts = createServerFn({ method: "GET" }).handler(async () => {
   const sb = await getAdmin();
