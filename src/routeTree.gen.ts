@@ -10,13 +10,20 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RCodeRouteImport } from './routes/r.$code'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram.webhook'
 import { Route as ApiPublicTIdRouteImport } from './routes/api/public/t.$id'
+import { Route as ApiPublicRCodeRouteImport } from './routes/api/public/r.$code'
 import { Route as ApiPublicCronDistributeRouteImport } from './routes/api/public/cron.distribute'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RCodeRoute = RCodeRouteImport.update({
+  id: '/r/$code',
+  path: '/r/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicTelegramWebhookRoute =
@@ -30,6 +37,11 @@ const ApiPublicTIdRoute = ApiPublicTIdRouteImport.update({
   path: '/api/public/t/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRCodeRoute = ApiPublicRCodeRouteImport.update({
+  id: '/api/public/r/$code',
+  path: '/api/public/r/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicCronDistributeRoute = ApiPublicCronDistributeRouteImport.update({
   id: '/api/public/cron/distribute',
   path: '/api/public/cron/distribute',
@@ -38,20 +50,26 @@ const ApiPublicCronDistributeRoute = ApiPublicCronDistributeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/r/$code': typeof RCodeRoute
   '/api/public/cron/distribute': typeof ApiPublicCronDistributeRoute
+  '/api/public/r/$code': typeof ApiPublicRCodeRoute
   '/api/public/t/$id': typeof ApiPublicTIdRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/r/$code': typeof RCodeRoute
   '/api/public/cron/distribute': typeof ApiPublicCronDistributeRoute
+  '/api/public/r/$code': typeof ApiPublicRCodeRoute
   '/api/public/t/$id': typeof ApiPublicTIdRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/r/$code': typeof RCodeRoute
   '/api/public/cron/distribute': typeof ApiPublicCronDistributeRoute
+  '/api/public/r/$code': typeof ApiPublicRCodeRoute
   '/api/public/t/$id': typeof ApiPublicTIdRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
@@ -59,26 +77,34 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/r/$code'
     | '/api/public/cron/distribute'
+    | '/api/public/r/$code'
     | '/api/public/t/$id'
     | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/r/$code'
     | '/api/public/cron/distribute'
+    | '/api/public/r/$code'
     | '/api/public/t/$id'
     | '/api/public/telegram/webhook'
   id:
     | '__root__'
     | '/'
+    | '/r/$code'
     | '/api/public/cron/distribute'
+    | '/api/public/r/$code'
     | '/api/public/t/$id'
     | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  RCodeRoute: typeof RCodeRoute
   ApiPublicCronDistributeRoute: typeof ApiPublicCronDistributeRoute
+  ApiPublicRCodeRoute: typeof ApiPublicRCodeRoute
   ApiPublicTIdRoute: typeof ApiPublicTIdRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
@@ -90,6 +116,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/r/$code': {
+      id: '/r/$code'
+      path: '/r/$code'
+      fullPath: '/r/$code'
+      preLoaderRoute: typeof RCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/telegram/webhook': {
@@ -106,6 +139,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/r/$code': {
+      id: '/api/public/r/$code'
+      path: '/api/public/r/$code'
+      fullPath: '/api/public/r/$code'
+      preLoaderRoute: typeof ApiPublicRCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/distribute': {
       id: '/api/public/cron/distribute'
       path: '/api/public/cron/distribute'
@@ -118,20 +158,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RCodeRoute: RCodeRoute,
   ApiPublicCronDistributeRoute: ApiPublicCronDistributeRoute,
+  ApiPublicRCodeRoute: ApiPublicRCodeRoute,
   ApiPublicTIdRoute: ApiPublicTIdRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

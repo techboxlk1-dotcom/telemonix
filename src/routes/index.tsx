@@ -25,6 +25,7 @@ import {
   getMe, setMode, broadcast, listPosts, savePost, deletePost,
   createCampaign, listCampaigns, reviewCampaign, topupCampaign,
   advertiserStats, updateSettings, adminDeleteCampaign,
+  suggestCTA, listSavedPostStats, deleteSavedPostEverywhere,
 } from "@/lib/telegram.functions";
 import logo from "@/assets/telemonix-logo.png";
 
@@ -695,9 +696,17 @@ function AdminAds({ initData }: any) {
 }
 
 function AdminCompose({ initData }: any) {
+  const qc = useQueryClient();
   const listFn = useServerFn(listChannels);
   const sendFn = useServerFn(broadcast);
+  const saveFn = useServerFn(savePost);
+  const statsFn = useServerFn(listSavedPostStats);
+  const delAllFn = useServerFn(deleteSavedPostEverywhere);
+  const cta = useServerFn(suggestCTA);
   const { data: channels = [] } = useQuery({ queryKey: ["all-channels"], queryFn: () => listFn({ data: { initData, scope: "all" } }) });
+  const { data: saved = [] } = useQuery({ queryKey: ["saved-stats"], queryFn: () => statsFn({ data: { initData } }), refetchInterval: 15000 });
+
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [buttonText, setButtonText] = useState("");
   const [buttonUrl, setButtonUrl] = useState("");
@@ -706,35 +715,72 @@ function AdminCompose({ initData }: any) {
   const [watermark, setWatermark] = useState(true);
   const [cpm, setCpm] = useState(1);
   const [cpc, setCpc] = useState(0.05);
+  const [ctaOptions, setCtaOptions] = useState<string[]>([]);
   const [lastResult, setLastResult] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const reset = () => { setEditingId(null); setText(""); setButtonText(""); setButtonUrl(""); setImageBase64(null); setLastResult(null); };
+
+  const suggestMut = useMutation({
+    mutationFn: () => cta({ data: { text } }),
+    onSuccess: (r: any) => { setCtaOptions(r.options); if (!buttonText) setButtonText(r.suggestion); toast.success(`Suggested: ${r.suggestion}`); },
+  });
+
+  const saveMut = useMutation({
+    mutationFn: () => saveFn({ data: { id: editingId, text, imageBase64, buttonText, buttonUrl, watermark, cpm, cpc } }),
+    onSuccess: (r: any) => { setEditingId(r.id); toast.success("Saved"); qc.invalidateQueries({ queryKey: ["saved-stats"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const sendMut = useMutation({
-    mutationFn: () => sendFn({ data: { text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null, channelIds: Array.from(selected), initData, siteOrigin: window.location.origin, watermark, cpm, cpc } }),
+    mutationFn: async () => {
+      let pid = editingId;
+      if (!pid) { const r: any = await saveFn({ data: { id: null, text, imageBase64, buttonText, buttonUrl, watermark, cpm, cpc } }); pid = r.id; setEditingId(pid); }
+      return sendFn({ data: { text, imageBase64, buttonText: buttonText || null, buttonUrl: buttonUrl || null, channelIds: Array.from(selected), initData, siteOrigin: window.location.origin, watermark, cpm, cpc, savedPostId: pid } });
+    },
     onSuccess: (r: any) => {
       setLastResult(r);
+      qc.invalidateQueries({ queryKey: ["saved-stats"] });
       if (r.okCount === 0) toast.error(`Sent to 0 channels. ${r.results?.[0]?.error || "Check bot admin rights."}`);
-      else toast.success(`Sent to ${r.okCount}/${r.results.length} channels${r.failCount ? ` (${r.failCount} failed)` : ""}`);
+      else toast.success(`Sent to ${r.okCount}/${r.results.length} channels`);
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const delMut = useMutation({
+    mutationFn: (id: string) => delAllFn({ data: { id, initData } }),
+    onSuccess: (r: any) => { toast.success(`Deleted post + ${r.deleted} channel message(s)`); qc.invalidateQueries({ queryKey: ["saved-stats"] }); reset(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const loadSaved = (p: any) => {
+    setEditingId(p.id); setText(p.text || ""); setButtonText(p.button_text || ""); setButtonUrl(p.button_url || "");
+    setImageBase64(p.image_base64 || null); setWatermark(p.watermark !== false); setCpm(Number(p.cpm_usd || 1)); setCpc(Number(p.cpc_usd || 0.05));
+  };
 
   const activeChannels = channels.filter((c: any) => c.status === "active");
 
   return (
     <>
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2"><CardTitle className="text-base">Admin broadcast (direct)</CardTitle></CardHeader>
+      <Card className="border-white/10 bg-gradient-to-br from-purple-500/5 to-cyan-500/5">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between">
+          <CardTitle className="text-base">{editingId ? "Edit post" : "New admin post"}</CardTitle>
+          {editingId && <Button variant="ghost" size="sm" onClick={reset}><X className="h-4 w-4" />New</Button>}
+        </CardHeader>
         <CardContent className="space-y-2">
-          <Textarea placeholder="Message (HTML supported, URLs auto-tracked)" value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[100px]" />
+          <Textarea placeholder="Message (HTML supported, URLs auto-shortened & tracked)" value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[100px]" />
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setImageBase64(r.result as string); r.readAsDataURL(f); }} />
           {imageBase64 ? <div className="relative"><img src={imageBase64} className="rounded max-h-32" alt="" /><Button size="icon" variant="destructive" className="absolute top-1 right-1 h-6 w-6" onClick={() => setImageBase64(null)}><X className="h-3 w-3" /></Button></div> : <Button variant="outline" className="w-full bg-white/5 border-white/20" onClick={() => fileRef.current?.click()}><ImageIcon className="h-4 w-4 mr-1" />Image</Button>}
           <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Button text" value={buttonText} onChange={(e) => setButtonText(e.target.value)} className="bg-white/5 border-white/10" />
+            <Input placeholder="Button (CTA) text" value={buttonText} onChange={(e) => setButtonText(e.target.value)} className="bg-white/5 border-white/10" />
             <Input placeholder="https://..." value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} className="bg-white/5 border-white/10" />
           </div>
+          <div className="flex flex-wrap gap-1">
+            <Button size="sm" variant="outline" disabled={!text || suggestMut.isPending} onClick={() => suggestMut.mutate()} className="text-xs h-7 bg-gradient-to-r from-purple-500/20 to-cyan-500/20 border-purple-500/30">✨ AI Suggest CTA</Button>
+            {ctaOptions.map(o => <Button key={o} size="sm" variant="ghost" className="text-xs h-7 px-2" onClick={() => setButtonText(o)}>{o}</Button>)}
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            <div><Label className="text-xs">CPM ($ / 1k views)</Label><Input type="number" step={0.1} value={cpm} onChange={(e) => setCpm(+e.target.value)} className="bg-white/5 border-white/10" /></div>
+            <div><Label className="text-xs">CPM ($ / 1k)</Label><Input type="number" step={0.1} value={cpm} onChange={(e) => setCpm(+e.target.value)} className="bg-white/5 border-white/10" /></div>
             <div><Label className="text-xs">CPC ($ / click)</Label><Input type="number" step={0.01} value={cpc} onChange={(e) => setCpc(+e.target.value)} className="bg-white/5 border-white/10" /></div>
           </div>
           <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
@@ -754,7 +800,10 @@ function AdminCompose({ initData }: any) {
               </label>
             ))}
           </div>
-          <Button className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 border-0" disabled={!text || !selected.size || sendMut.isPending} onClick={() => sendMut.mutate()}><Send className="h-4 w-4 mr-1" />Send to {selected.size}</Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className="bg-white/5 border-white/20" disabled={!text || saveMut.isPending} onClick={() => saveMut.mutate()}><Save className="h-4 w-4 mr-1" />{editingId ? "Update" : "Save draft"}</Button>
+            <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 border-0" disabled={!text || !selected.size || sendMut.isPending} onClick={() => sendMut.mutate()}><Send className="h-4 w-4 mr-1" />Save & Send to {selected.size}</Button>
+          </div>
           {lastResult && (
             <div className="rounded-lg border border-white/10 bg-white/5 p-2 space-y-1 text-[11px]">
               <p className="font-medium">Result: {lastResult.okCount} ok · {lastResult.failCount} failed</p>
@@ -763,6 +812,33 @@ function AdminCompose({ initData }: any) {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="pb-2"><CardTitle className="text-base">Saved posts · live stats</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {saved.length === 0 && <p className="text-xs text-muted-foreground">No saved posts yet. Create one above.</p>}
+          {saved.map((p: any) => (
+            <div key={p.id} className="rounded-lg border border-white/10 bg-white/5 p-2 space-y-1">
+              <div className="flex items-start gap-2">
+                {p.image_base64 && <img src={p.image_base64} alt="" className="w-12 h-12 rounded object-cover" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs line-clamp-2">{p.text}</p>
+                  {p.button_text && <Badge variant="outline" className="text-[9px] h-4 mt-1">{p.button_text}</Badge>}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-1 text-[10px] text-center">
+                <div className="bg-white/5 rounded p-1"><div className="font-bold text-cyan-300">{p.stats.channels}</div>channels</div>
+                <div className="bg-white/5 rounded p-1"><div className="font-bold text-purple-300">{p.stats.views}</div>views</div>
+                <div className="bg-white/5 rounded p-1"><div className="font-bold text-emerald-300">{p.stats.unique}</div>clicks</div>
+              </div>
+              <div className="flex gap-1">
+                <Button size="sm" variant="outline" className="flex-1 h-7 text-xs bg-white/5 border-white/20" onClick={() => loadSaved(p)}>Edit</Button>
+                <Button size="sm" variant="destructive" className="flex-1 h-7 text-xs" disabled={delMut.isPending} onClick={() => { if (confirm("Delete post AND remove from all channels via bot?")) delMut.mutate(p.id); }}><Trash2 className="h-3 w-3 mr-1" />Delete everywhere</Button>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
     </>

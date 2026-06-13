@@ -418,6 +418,7 @@ export type Database = {
           cpc_usd: number
           cpm_usd: number
           created_at: string
+          cta_suggested: string | null
           id: string
           image_base64: string | null
           text: string
@@ -431,6 +432,7 @@ export type Database = {
           cpc_usd?: number
           cpm_usd?: number
           created_at?: string
+          cta_suggested?: string | null
           id?: string
           image_base64?: string | null
           text?: string
@@ -444,6 +446,7 @@ export type Database = {
           cpc_usd?: number
           cpm_usd?: number
           created_at?: string
+          cta_suggested?: string | null
           id?: string
           image_base64?: string | null
           text?: string
@@ -465,6 +468,7 @@ export type Database = {
           link_map: Json | null
           message_id: number | null
           owner_id: number
+          saved_post_id: string | null
           sent_at: string
           text: string | null
           unique_clicks: number
@@ -483,6 +487,7 @@ export type Database = {
           link_map?: Json | null
           message_id?: number | null
           owner_id: number
+          saved_post_id?: string | null
           sent_at?: string
           text?: string | null
           unique_clicks?: number
@@ -501,6 +506,7 @@ export type Database = {
           link_map?: Json | null
           message_id?: number | null
           owner_id?: number
+          saved_post_id?: string | null
           sent_at?: string
           text?: string | null
           unique_clicks?: number
@@ -523,6 +529,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      short_links: {
+        Row: {
+          code: string
+          created_at: string
+          kind: string
+          ref_id: string
+          src: string
+          target_url: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          kind: string
+          ref_id: string
+          src?: string
+          target_url?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          kind?: string
+          ref_id?: string
+          src?: string
+          target_url?: string | null
+        }
+        Relationships: []
       }
       telegram_channels: {
         Row: {

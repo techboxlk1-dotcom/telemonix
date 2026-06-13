@@ -7,16 +7,32 @@ const BOT_USERNAME = "teleMonix_bot";
 const WATERMARK = `\n\n— via @${BOT_USERNAME} · Monetize your Telegram channel`;
 const URL_RE = /(https?:\/\/[^\s<]+)/gi;
 
-// Replace every http(s) URL in `text` with `${origin}/api/public/t/<id>?u=...&src=link&to=<url>`.
-// Returns rewritten text + mapping (original url → tracker url).
-function rewriteLinks(text: string, origin: string, trackerId: string, source: "post" | "ad"): { text: string; map: Record<string, string> } {
+function shortCode(len = 6) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz";
+  let s = ""; for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
+async function makeShortLink(kind: "post" | "ad", refId: string, src: "button" | "link", targetUrl: string | null, origin: string) {
+  const sb = await getAdmin();
+  for (let i = 0; i < 5; i++) {
+    const code = shortCode(6);
+    const { error } = await sb.from("short_links").insert({ code, kind, ref_id: refId, src, target_url: targetUrl });
+    if (!error) return `${origin}/r/${code}`;
+  }
+  return `${origin}/api/public/t/${refId}?p=${kind}&src=${src}${targetUrl ? `&to=${encodeURIComponent(targetUrl)}` : ""}`;
+}
+
+// Replace every http(s) URL in `text` with a short tracking URL.
+async function rewriteLinks(text: string, origin: string, trackerId: string, source: "post" | "ad"): Promise<{ text: string; map: Record<string, string> }> {
   if (!text || !origin) return { text: text || "", map: {} };
   const map: Record<string, string> = {};
-  const out = text.replace(URL_RE, (orig) => {
-    const tracker = `${origin}/api/public/t/${trackerId}?p=${source}&src=link&to=${encodeURIComponent(orig)}`;
-    map[orig] = tracker;
-    return tracker;
-  });
+  const urls = Array.from(text.matchAll(URL_RE)).map(m => m[0]);
+  for (const orig of urls) {
+    if (map[orig]) continue;
+    map[orig] = await makeShortLink(source, trackerId, "link", orig, origin);
+  }
+  const out = text.replace(URL_RE, (orig) => map[orig] || orig);
   return { text: out, map };
 }
 
@@ -410,7 +426,7 @@ export const broadcast = createServerFn({ method: "POST" })
     text: string; imageBase64?: string | null;
     buttonText?: string | null; buttonUrl?: string | null;
     channelIds?: string[]; siteOrigin?: string;
-    watermark?: boolean; cpm?: number; cpc?: number;
+    watermark?: boolean; cpm?: number; cpc?: number; savedPostId?: string | null;
     initData?: string; devUid?: number;
   }) => d)
   .handler(async ({ data }) => {
@@ -437,6 +453,7 @@ export const broadcast = createServerFn({ method: "POST" })
           chat_id: ch.chat_id, text: data.text || null,
           button_url: data.buttonUrl || null,
           watermark, cpm_usd: cpm, cpc_usd: cpc,
+          saved_post_id: data.savedPostId || null,
         }).select().single();
         if (insErr || !ins) throw new Error(insErr?.message || "DB insert failed");
         preRow = ins;
@@ -444,10 +461,10 @@ export const broadcast = createServerFn({ method: "POST" })
         const trackerId = ins.id;
         const baseText = (data.text || "") + (watermark ? WATERMARK : "");
         const { text: rewrittenText, map: linkMap } = origin
-          ? rewriteLinks(baseText, origin, trackerId, "post")
+          ? await rewriteLinks(baseText, origin, trackerId, "post")
           : { text: baseText, map: {} as Record<string, string> };
         const buttonTracker = (origin && data.buttonText && data.buttonUrl)
-          ? `${origin}/api/public/t/${trackerId}?p=post&src=button`
+          ? await makeShortLink("post", trackerId, "button", data.buttonUrl, origin)
           : (data.buttonUrl || null);
         await sb.from("sent_messages").update({ link_map: linkMap }).eq("id", trackerId);
 
@@ -577,8 +594,8 @@ export const distributeAds = createServerFn({ method: "POST" })
           }).select().single();
           if (!placement) continue;
           const baseText = (c.text || "") + (c.watermark ? WATERMARK : "");
-          const { text: rewrittenText, map: linkMap } = rewriteLinks(baseText, origin, placement.id, "ad");
-          const buttonTracker = `${origin}/api/public/t/${placement.id}?p=ad&src=button`;
+          const { text: rewrittenText, map: linkMap } = await rewriteLinks(baseText, origin, placement.id, "ad");
+          const buttonTracker = await makeShortLink("ad", placement.id, "button", c.button_url, origin);
           await sb.from("ad_placements").update({ link_map: linkMap }).eq("id", placement.id);
           const reply_markup = { inline_keyboard: [[{ text: c.button_text, url: buttonTracker }]] };
           let resp: any;
@@ -747,3 +764,70 @@ export async function notifyBotRemoved(ownerId: number, channelTitle: string) {
     });
   } catch {}
 }
+
+// =============== Smart CTA suggest (AI) ===============
+export const suggestCTA = createServerFn({ method: "POST" })
+  .inputValidator((d: { text: string }) => d)
+  .handler(async ({ data }) => {
+    const presets = ["🎁 Get Reward","📝 Register Here","🔥 Join Now","🌐 Open Website","👀 View Channel","📥 Download App","🚀 Start Earning","💰 Claim Bonus","🎯 Learn More"];
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key || !data.text) return { suggestion: presets[0], options: presets };
+    try {
+      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Lovable-API-Key": key },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            { role: "system", content: `Pick the single best CTA button label for the ad text. Choose ONLY from this list and reply with the exact label, nothing else:\n${presets.join("\n")}` },
+            { role: "user", content: data.text.slice(0, 800) },
+          ],
+        }),
+      });
+      const j = await res.json();
+      const out = (j.choices?.[0]?.message?.content || "").trim();
+      const match = presets.find(p => out.includes(p)) || presets[0];
+      return { suggestion: match, options: presets };
+    } catch {
+      return { suggestion: presets[0], options: presets };
+    }
+  });
+
+// =============== Saved-post stats (aggregated views/clicks across channels) ===============
+export const listSavedPostStats = createServerFn({ method: "POST" })
+  .inputValidator((d: { initData?: string; devUid?: number }) => d)
+  .handler(async ({ data }) => {
+    const { user } = resolveUser(data.initData, data.devUid);
+    if (user.id !== ADMIN_ID) throw new Error("Forbidden");
+    const sb = await getAdmin();
+    const { data: posts } = await sb.from("saved_posts").select("*").order("updated_at", { ascending: false });
+    if (!posts?.length) return [];
+    const ids = posts.map((p: any) => p.id);
+    const { data: msgs } = await sb.from("sent_messages").select("saved_post_id, views, clicks, unique_clicks, channel_id").in("saved_post_id", ids);
+    const agg: Record<string, { views: number; clicks: number; unique: number; channels: number }> = {};
+    (msgs ?? []).forEach((m: any) => {
+      if (!m.saved_post_id) return;
+      const a = agg[m.saved_post_id] ||= { views: 0, clicks: 0, unique: 0, channels: 0 };
+      a.views += m.views || 0; a.clicks += m.clicks || 0; a.unique += m.unique_clicks || 0; a.channels += 1;
+    });
+    return posts.map((p: any) => ({ ...p, stats: agg[p.id] || { views: 0, clicks: 0, unique: 0, channels: 0 } }));
+  });
+
+// =============== Delete saved post EVERYWHERE (DB + Telegram channels) ===============
+export const deleteSavedPostEverywhere = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string; initData?: string; devUid?: number }) => d)
+  .handler(async ({ data }) => {
+    const { user } = resolveUser(data.initData, data.devUid);
+    if (user.id !== ADMIN_ID) throw new Error("Forbidden");
+    const sb = await getAdmin();
+    const { data: msgs } = await sb.from("sent_messages").select("id, chat_id, message_id").eq("saved_post_id", data.id);
+    let deleted = 0;
+    for (const m of msgs ?? []) {
+      if (m.message_id) {
+        try { const r = await tg("deleteMessage", { chat_id: m.chat_id, message_id: m.message_id }); if (r.ok) deleted++; } catch {}
+      }
+    }
+    await sb.from("sent_messages").delete().eq("saved_post_id", data.id);
+    await sb.from("saved_posts").delete().eq("id", data.id);
+    return { ok: true, deleted };
+  });
