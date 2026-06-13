@@ -594,8 +594,8 @@ export const distributeAds = createServerFn({ method: "POST" })
           }).select().single();
           if (!placement) continue;
           const baseText = (c.text || "") + (c.watermark ? WATERMARK : "");
-          const { text: rewrittenText, map: linkMap } = rewriteLinks(baseText, origin, placement.id, "ad");
-          const buttonTracker = `${origin}/api/public/t/${placement.id}?p=ad&src=button`;
+          const { text: rewrittenText, map: linkMap } = await rewriteLinks(baseText, origin, placement.id, "ad");
+          const buttonTracker = await makeShortLink("ad", placement.id, "button", c.button_url, origin);
           await sb.from("ad_placements").update({ link_map: linkMap }).eq("id", placement.id);
           const reply_markup = { inline_keyboard: [[{ text: c.button_text, url: buttonTracker }]] };
           let resp: any;
