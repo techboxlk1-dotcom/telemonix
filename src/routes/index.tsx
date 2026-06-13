@@ -25,6 +25,7 @@ import {
   getMe, setMode, broadcast, listPosts, savePost, deletePost,
   createCampaign, listCampaigns, reviewCampaign, topupCampaign,
   advertiserStats, updateSettings, adminDeleteCampaign,
+  suggestCTA, listSavedPostStats, deleteSavedPostEverywhere,
 } from "@/lib/telegram.functions";
 import logo from "@/assets/telemonix-logo.png";
 
