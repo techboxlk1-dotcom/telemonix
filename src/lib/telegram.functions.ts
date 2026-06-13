@@ -7,16 +7,32 @@ const BOT_USERNAME = "teleMonix_bot";
 const WATERMARK = `\n\n— via @${BOT_USERNAME} · Monetize your Telegram channel`;
 const URL_RE = /(https?:\/\/[^\s<]+)/gi;
 
-// Replace every http(s) URL in `text` with `${origin}/api/public/t/<id>?u=...&src=link&to=<url>`.
-// Returns rewritten text + mapping (original url → tracker url).
-function rewriteLinks(text: string, origin: string, trackerId: string, source: "post" | "ad"): { text: string; map: Record<string, string> } {
+function shortCode(len = 6) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz";
+  let s = ""; for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
+async function makeShortLink(kind: "post" | "ad", refId: string, src: "button" | "link", targetUrl: string | null, origin: string) {
+  const sb = await getAdmin();
+  for (let i = 0; i < 5; i++) {
+    const code = shortCode(6);
+    const { error } = await sb.from("short_links").insert({ code, kind, ref_id: refId, src, target_url: targetUrl });
+    if (!error) return `${origin}/r/${code}`;
+  }
+  return `${origin}/api/public/t/${refId}?p=${kind}&src=${src}${targetUrl ? `&to=${encodeURIComponent(targetUrl)}` : ""}`;
+}
+
+// Replace every http(s) URL in `text` with a short tracking URL.
+async function rewriteLinks(text: string, origin: string, trackerId: string, source: "post" | "ad"): Promise<{ text: string; map: Record<string, string> }> {
   if (!text || !origin) return { text: text || "", map: {} };
   const map: Record<string, string> = {};
-  const out = text.replace(URL_RE, (orig) => {
-    const tracker = `${origin}/api/public/t/${trackerId}?p=${source}&src=link&to=${encodeURIComponent(orig)}`;
-    map[orig] = tracker;
-    return tracker;
-  });
+  const urls = Array.from(text.matchAll(URL_RE)).map(m => m[0]);
+  for (const orig of urls) {
+    if (map[orig]) continue;
+    map[orig] = await makeShortLink(source, trackerId, "link", orig, origin);
+  }
+  const out = text.replace(URL_RE, (orig) => map[orig] || orig);
   return { text: out, map };
 }
 
