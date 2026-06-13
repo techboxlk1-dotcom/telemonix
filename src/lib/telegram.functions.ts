@@ -426,7 +426,7 @@ export const broadcast = createServerFn({ method: "POST" })
     text: string; imageBase64?: string | null;
     buttonText?: string | null; buttonUrl?: string | null;
     channelIds?: string[]; siteOrigin?: string;
-    watermark?: boolean; cpm?: number; cpc?: number;
+    watermark?: boolean; cpm?: number; cpc?: number; savedPostId?: string | null;
     initData?: string; devUid?: number;
   }) => d)
   .handler(async ({ data }) => {
