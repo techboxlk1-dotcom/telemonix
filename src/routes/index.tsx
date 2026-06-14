@@ -768,7 +768,8 @@ function AdminCompose({ initData }: any) {
           {editingId && <Button variant="ghost" size="sm" onClick={reset}><X className="h-4 w-4" />New</Button>}
         </CardHeader>
         <CardContent className="space-y-2">
-          <Textarea placeholder="Message (HTML supported, URLs auto-shortened & tracked)" value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[100px]" />
+          <Textarea placeholder={"Message body. To hide a tracking URL behind a word, write:\n[Get Reward](https://example.com)\nThe reader sees only \"Get Reward\" as a clickable link."} value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[110px]" />
+          <p className="text-[10px] text-muted-foreground -mt-1">💡 Hide tracking links: <code className="bg-white/10 px-1 rounded">[word](https://your-url.com)</code> → readers see only "word", clicks are tracked.</p>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setImageBase64(r.result as string); r.readAsDataURL(f); }} />
           {imageBase64 ? <div className="relative"><img src={imageBase64} className="rounded max-h-32" alt="" /><Button size="icon" variant="destructive" className="absolute top-1 right-1 h-6 w-6" onClick={() => setImageBase64(null)}><X className="h-3 w-3" /></Button></div> : <Button variant="outline" className="w-full bg-white/5 border-white/20" onClick={() => fileRef.current?.click()}><ImageIcon className="h-4 w-4 mr-1" />Image</Button>}
           <div className="grid grid-cols-2 gap-2">
