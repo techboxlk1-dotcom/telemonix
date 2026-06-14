@@ -64,11 +64,24 @@ function openLink(url: string) {
 // Telegram-style preview card used in both admin compose and advertiser builder.
 function PostPreview({ text, imageBase64, buttonText, watermark, botUsername = "teleMonix_bot" }: { text: string; imageBase64?: string | null; buttonText?: string; watermark?: boolean; botUsername?: string }) {
   const finalText = (text || "") + (watermark ? `\n\n— via @${botUsername} · Monetize your Telegram channel` : "");
+  // Render [anchor](url) as a styled link so the user sees the hidden-link preview as it will appear in Telegram.
+  const parts: Array<string | { label: string }> = [];
+  let last = 0;
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(finalText)) !== null) {
+    if (m.index > last) parts.push(finalText.slice(last, m.index));
+    parts.push({ label: m[1] });
+    last = m.index + m[0].length;
+  }
+  if (last < finalText.length) parts.push(finalText.slice(last));
   return (
     <div className="rounded-2xl bg-[#17212b] border border-white/10 p-3 max-w-[320px] shadow-lg">
       <div className="flex items-center gap-2 mb-2"><div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500" /><div><p className="text-[11px] font-medium text-white">@{botUsername}</p><p className="text-[9px] text-white/40">Channel · just now</p></div></div>
       {imageBase64 && <img src={imageBase64} alt="" className="rounded-lg w-full max-h-40 object-cover mb-2" />}
-      <p className="text-[13px] text-white whitespace-pre-wrap break-words">{finalText || <span className="text-white/30">Your message preview…</span>}</p>
+      <p className="text-[13px] text-white whitespace-pre-wrap break-words">
+        {parts.length ? parts.map((p, i) => typeof p === "string" ? <span key={i}>{p}</span> : <span key={i} className="text-[#6ab3f3] underline cursor-pointer">{p.label}</span>) : <span className="text-white/30">Your message preview…</span>}
+      </p>
       {buttonText && <div className="mt-2 rounded-md bg-[#2b5278] text-white text-center text-xs font-medium py-2">{buttonText}</div>}
     </div>
   );
@@ -768,7 +781,8 @@ function AdminCompose({ initData }: any) {
           {editingId && <Button variant="ghost" size="sm" onClick={reset}><X className="h-4 w-4" />New</Button>}
         </CardHeader>
         <CardContent className="space-y-2">
-          <Textarea placeholder="Message (HTML supported, URLs auto-shortened & tracked)" value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[100px]" />
+          <Textarea placeholder={"Message body. To hide a tracking URL behind a word, write:\n[Get Reward](https://example.com)\nThe reader sees only \"Get Reward\" as a clickable link."} value={text} onChange={(e) => setText(e.target.value)} className="bg-white/5 border-white/10 min-h-[110px]" />
+          <p className="text-[10px] text-muted-foreground -mt-1">💡 Hide tracking links: <code className="bg-white/10 px-1 rounded">[word](https://your-url.com)</code> → readers see only "word", clicks are tracked.</p>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setImageBase64(r.result as string); r.readAsDataURL(f); }} />
           {imageBase64 ? <div className="relative"><img src={imageBase64} className="rounded max-h-32" alt="" /><Button size="icon" variant="destructive" className="absolute top-1 right-1 h-6 w-6" onClick={() => setImageBase64(null)}><X className="h-3 w-3" /></Button></div> : <Button variant="outline" className="w-full bg-white/5 border-white/20" onClick={() => fileRef.current?.click()}><ImageIcon className="h-4 w-4 mr-1" />Image</Button>}
           <div className="grid grid-cols-2 gap-2">
