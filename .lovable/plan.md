@@ -1,81 +1,75 @@
-# TeleMonix Pro Upgrade Plan
+# Plan — Netlify hosting, env vars, mini app, views, hidden tracking
 
-ඔයාගේ requirements ගොඩක් වැඩි. මම මේක phases 5 කට කඩලා හදනවා. එක එක phase එක ඉවර වුණාම review කරන්න පුළුවන්. මුලින් plan එක confirm කරන්න.
+## 1. Netlify deploy ඇත්තටම වැඩ කරවන්න
 
-## Phase 1 — Foundations & Branding
+දැන් `gotelemonix.netlify.app` 404 — server functions (TanStack Start) Netlify එකේ run වෙන්න adapter එකක් ඕනේ. දැනට ඔයාගේ `netlify.toml` සරල SPA විදිහට පමණයි publish වෙන්නේ, ඒ නිසා `/`, `/r/:code`, `/api/public/*` කිසිවක් වැඩ කරන්නේ නෑ.
 
-- **Logo:** ඔයා upload කරපු TeleMonix logo එක replace කරනවා (`src/assets/telemonix-logo.png`).
-- **Splash + Dashboard picker:** Mini app open වෙද්දි සෑම වතාවකම logo splash → mode picker dashboard (Publisher / Advertiser) පෙන්වනවා, mini app විස්තර + ad network features ඇතුළත්ව. Selection පස්සේ තමයි role tabs ඔපන් වෙන්නේ. Top-bar එකේ mode switcher.
-- **Design refresh:** Glassmorphism + gradient cards, animated banners, color-coded badges, larger typography, section headers, professional fintech look.
-- **GitHub/Netlify compat:** `netlify.toml` + SPA fallback, `_redirects`, README, build script. (TanStack Start server functions → Netlify Functions adapter explanation: server routes need Netlify/Cloudflare adapter — මම Netlify adapter wire කරනවා. GitHub repo වලට fit වෙන්න `.gitignore`, env example file එකක්.)
+කරන්න යන දේවල්:
+- `@netlify/vite-plugin-tanstack-start` (Netlify Start adapter) `bun add -d` කරලා `vite.config.ts` එකට plugin එක wire කරනවා.
+- `netlify.toml` එක adapter එකට ගැලපෙන්න update — `publish = "dist/client"`, functions folder, `/api/*` → server function, SPA fallback අයින්.
+- `public/_redirects` අයින් (adapter එකෙන් handle වෙනවා).
+- Build command `bun run build`. Node 20.
+- GitHub Pages workflow (`.github/workflows/static.yml`) අයින් — එක confuse වෙනවා, GH Pages මේ stack එකට වැඩ කරන්නේ නෑ.
 
-## Phase 2 — Tracking & Counting Engine (the core bug fixes)
+## 2. Netlify Environment Variables (Site Settings → Environment variables)
 
-- **Admin posts send 0 bug:** sender flow එක debug කරලා fix කරනවා (current issue: send count 0). Send → DB write → progress refresh wire properly.
-- **Preview pane:** Admin post + Advertiser ad create flow වල live Telegram-style preview card (image, text, button) පෙන්වනවා.
-- **Per-user click dedup:** `ad_clicks` (user_id, ad_id, source) unique table. Button click 1× + link click 1× = ONE click counted per user per ad. Already-clicked = no count. Auto-applied for both buttons සහ message links (link rewriting: text එකේ http(s) URLs auto-replace කරනවා tracker URLs වලට).
-- **Admin post tracking එකත් same:** CPM + CPC fields admin post compose එකේ. Watermark default ON, admin post එකේ විතරක් remove toggle. Ad posts වල watermark force ON.
-- **Auto bot/API view+click counting:** scheduled cron (every 5 min) — channel post views Telegram API (`forwardMessages` + `getChat` member-count + click ratio formula in your VR algorithm) භාවිතා කරලා estimate update + recorded clicks atomic. Value → publisher earnings auto-credit (admin posts: admin defined CPM/CPC × 65%; ad posts: advertiser CPM/CPC × 65%).
-- **Auto-credit publisher balances** to `profiles.publisher_balance_usd` + `earnings_ledger` rows.
+මේ ටික **හරියටම** මේ නම් වලින් දාන්න:
 
-## Phase 3 — Wallets, Deposit & Withdraw
+Public (build-time):
+- `VITE_SUPABASE_URL` = `https://ouxtjwgpttsqbbbvvfeo.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY` = `sb_publishable_-PDPqYz5dXtorTazvUW3cA_ZUaWpErT`
+- `VITE_SUPABASE_PROJECT_ID` = `ouxtjwgpttsqbbbvvfeo`
 
-- **Advertiser:** Deposit-only tab. Public side: Withdraw-only.
-- **Deposit page:**
-  - USDT BEP20: `0x082679f6cD88A25a17b58979AC72a500b1Aa1b9c`
-  - TRX TRC20: `THK7E2wEz6SjakNM3Z7jigJdU9ixKJPDEo`
-  - TON: `UQA3agalrvn_PYTiVYvaS55qthZFxnLrjQm0tUNb2lQ3A9pL`
-  - Min $5. Live price (CoinGecko API) → user enters USD, shows token amount.
-  - Auto-confirm: on-chain watcher (BSC/Tron/TON public RPCs) checks deposit address for incoming tx matching `(amount ± tolerance, memo/tag = user_id short code)`. Confirmed → balance add → notification. Cron every 2 min.
-- **Withdraw:** USDT BEP20, TRX TRC20, TON (memo optional). Min $10. History list. Status: pending / approved / paid / rejected. Admin approve manually first; auto-payout toggle later.
-- **Withdraw history + Deposit history** for user.
+Server-only (runtime, Functions scope):
+- `SUPABASE_URL` = same URL
+- `SUPABASE_PUBLISHABLE_KEY` = same publishable key
+- `SUPABASE_SERVICE_ROLE_KEY` = **Lovable Cloud එකේ දැනට තියෙන service role key එක.** මේක Lovable Cloud managed නිසා ඔයාට Lovable Cloud dashboard එකෙන් copy කරගන්න ඕනේ (මට ඒක reveal කරන්න බෑ). Netlify එකට paste කරන්න.
+- `TELEGRAM_BOT_TOKEN` = ඔයාගේ BotFather token
+- `LOVABLE_API_KEY` = Lovable AI Gateway key (Smart CTA AI suggest එකට)
 
-## Phase 4 — Admin Pro Dashboard
+README + `.env.example` මේ list එකට update කරනවා.
 
-Dedicated admin (chat 5419054691) section with sidebar-style tabs:
+## 3. Telegram Mini App වැඩ නොකරන එක
 
-1. **Overview** — total earnings, users, active ads, views, clicks, pending withdrawals, charts.
-2. **Users** — list, balances, total clicks/views, quality score, ban/reset/credit-balance. **Direct message + add balance** to any user.
-3. **Channels** — admin-added channel list, remove channel, set per-channel CPM/CPC override (overrides the 65% default).
-4. **Ads Manager** — review, approve, pause, edit ads. Targeting filters.
-5. **Channel Stats** — per channel: posts sent, views, clicks, CPM, CPC, revenue. Separate tab.
-6. **Withdraw Management** — pending/approved/paid/rejected, approve/reject/mark paid, Telegram notification to user.
-7. **Deposit Management** — auto/manual confirm, history.
-8. **Analytics** — CPM/CPC per channel, top channels, fraud detection (duplicate IP, fast clicks).
-9. **Settings** — default CPM, CPC, min withdraw, fraud level, watermark default.
+දැන් `t.me/teleMonix_bot?startapp` mini app open වෙන්නේ Lovable preview URL එකට. Netlify එකට move කරාට පස්සේ BotFather → `/setmenubutton` (හෝ `/newapp`) එකෙන් **Web App URL** `https://gotelemonix.netlify.app/` (පස්සේ custom domain) කියලා update කරන්න ඕනේ. මේක මම code එකෙන් කරන්න බෑ — ඔයා BotFather එකේ සකස් කරන්න. මම README එකේ step-by-step Sinhala instructions දානවා.
 
-Admin gets Telegram notifications: new withdraw, new deposit, fraud alert, daily summary.
+Webhook එකත් අලුත් domain එකට point කරන්න ඕනේ — admin panel එකේ "Re-register webhook" button එකක් දානවා, click කරාම අලුත් `https://<site>/api/public/telegram/webhook` URL එක Telegram එකට register වෙනවා.
 
-## Phase 5 — Ad Engine, Targeting, FAQ
+## 4. Views count නිවැරදිව
 
-- **Channel add:** country + language + category selectors. Min 200K subscribers enforcement (validation message). Admin guidance image (the Telegram "Add Bot as Admin / Manage Messages" screenshot ඔයා upload කරපුව) + step-by-step guide pop-up.
-- **Channel & Ad pending message:** user adds channel → bot DMs user the promo post (NOT to channel). DM result shown in UI.
-- **Ad targeting:** country + language + category. Distribution engine matches only eligible channels.
-- **48-hour fallback:** if ad target views not reached in 48h, expand to other channels (drop targeting).
-- **Auto error recovery:** retry queue for failed Telegram API calls (exponential backoff). Error logs visible in admin.
-- **Referral link fix:** `https://t.me/teleMonix_bot?startapp=ref_<code>`.
-- **FAQ tab** for both publisher & advertiser modes — full guide including monetization, deposit/withdraw, CPM/CPC explanation (your Sinhala explanation reused).
-- **Analytics for users:** per-channel CPM, CPC, clicks, views shown to publisher.
+දැනට views = max(views, clicks) කරලා approximate කරනවා. ඔයාට ඕනේ real per-channel view count.
 
----
+Plan:
+- Cron (every 10 min) server route එකකින් — recent `sent_messages` (last 7 days) walk කරලා Telegram Bot API `getMessageViews` analog නෑ. ඒ වෙනුවට `forwardMessage` සමග view counts available වෙන්නේ channel admin access එකේදී පමණයි.
+- වඩාත් practical: bot එක channel එකේ admin නම් `editMessageReplyMarkup` call එකේ response එකේන් view count එනවා. ඒක capture කරලා `sent_messages.views` update කරනවා.
+- Alternative: post එකේ button `/r/CODE` click කරාම unique visitors gauge වෙනවා — මේකම "Reach estimate" විදිහට display කරනවා.
 
-## Technical notes (for me, not user-facing)
+මේ දෙකම implement කරනවා: real views (cron `getChat` + `editMessageReplyMarkup` workaround) + reach estimate (unique clicks × CTR factor).
 
-- New tables: `ad_clicks` (dedup), `deposits`, `withdrawals`, `channel_stats`, `admin_messages`, `error_log`.
-- Alter `telegram_channels`: `country`, `language`, `cpm_override`, `cpc_override`, `subscribers_count`.
-- Alter `ad_campaigns`: `country[]`, `language[]`, `cpc_rate`, expanded_at.
-- Alter `sent_messages`: add `cpm`, `cpc`, `watermark`, dedup-aware counters.
-- Cron jobs (pg_cron): distribute (5m), view-sync (5m), deposit-watcher (2m), withdraw-notify (5m), expand-targeting (1h).
-- Link rewriting in messages: regex extract URLs → store mapping → replace with tracker URLs before send.
-- Netlify deploy: add adapter, build config, document GitHub workflow.
+## 5. Tracking link එක සැඟවීම (Hidden Smart Tracking)
 
----
+දැන් problem: AI CTA suggest හරි, user වචනය හරි දාල save කරාම text එකේ raw `https://.../r/ABC` පේනවා.
 
-## Questions
+හදන විදිහ:
+- Composer එකේ "🔗 Smart link" field එකකට **destination URL** දාන්න (e.g. `https://example.com/signup`).
+- "CTA text" field එකට AI suggest හෝ user වචනය (e.g. "🎁 Get Reward").
+- Save කරනකොට backend `short_links` row එකක් හදනවා, ඊට පස්සේ Telegram message එකේ **inline keyboard button** එක විදිහට `[🎁 Get Reward](https://gotelemonix.netlify.app/r/ABC)` send කරනවා — text body එකේ raw URL කොහෙත්ම යන්නේ නෑ.
+- Optional: message body එක ඇතුළේ user වචනයකට link එක embed කරන්න ඕනේ නම් Telegram MarkdownV2 `[🎁 Get Reward](https://.../r/ABC)` — display එකේ පේන්නේ වචනය විතරයි, tracking URL hidden.
+- Preview component එකේත් මේ විදිහටම render කරනවා (button හෝ inline hyperlink — raw URL නෑ).
 
-1. **Auto deposit confirmation** needs blockchain RPC access — BSCScan API key, TronGrid key, TonAPI key. ඔයාට මේවා දාන්න පුළුවන්ද, නැතිනම් free public endpoints (rate-limited) use කරන්නද? Free OK කිව්වොත් මම free use කරනවා, පස්සේ keys add කරන්න පුළුවන්.
-2. **GitHub/Netlify:** ඔයාට මේක දැනට Lovable hosting වෙනුවට Netlify වලට move කරන්න ඕනේද, නැතිනම් just compatibility (Lovable තවම main, Netlify backup option)?
-3. **200K subscribers minimum** strict block කරන්නද, නැතිනම් warning + admin override?
-4. **Auto-payout** withdraw — manual approval only (Phase 1), auto-payout later wire? Confirm.
+## 6. Scope split / order
 
-Confirm කරාම මම phase order එකේ build කරන්න පටන් ගන්නවා. ඔක්කොම එක මැසේජ් එකකින් කරන්න බෑ — 5 large passes වෙයි.
+1. Netlify adapter + toml + redirects cleanup + GH workflow delete
+2. README + `.env.example` env-var guide (Sinhala steps)
+3. Composer: destination URL + CTA text fields, hidden short-link generation, MarkdownV2 hyperlink rendering, preview update
+4. Webhook re-register button + admin instructions
+5. View-count cron job + reach estimate column
+
+## Technical notes
+- Netlify adapter: `@netlify/vite-plugin-tanstack-start` (current TanStack Start Netlify integration). Server functions deploy as Netlify Functions automatically; `/api/public/*` works as-is.
+- `SUPABASE_SERVICE_ROLE_KEY` මට reveal කරන්න බෑ — Lovable Cloud → Project Settings → Backend → Secrets එකේන් copy කරගන්න.
+- Telegram MarkdownV2 එකේ `.`, `-`, `!`, `(`, `)` escape කරන්න ඕනේ — helper එකක් `telegram.functions.ts` එකේ දැනටමත් තියෙනවා, reuse.
+- Mini-app Web App URL change BotFather එකෙන් පමණයි කරන්න පුළුවන් — automated කරන්න බෑ.
+
+## මගෙන් confirm එකක්
+මේ plan එක okද, නැත්නම් මුලින්ම Netlify + env vars + hidden tracking (1, 2, 3, 4) පමණක්ම මේ turn එකේ ගහලා, view-count cron (5) වෙනම turn එකකට තියන්නද?
