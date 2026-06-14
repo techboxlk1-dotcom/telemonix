@@ -6,6 +6,8 @@ const ADMIN_ID = 5419054691;
 const BOT_USERNAME = "teleMonix_bot";
 const WATERMARK = `\n\n— via @${BOT_USERNAME} · Monetize your Telegram channel`;
 const URL_RE = /(https?:\/\/[^\s<]+)/gi;
+// Markdown-style anchor: [click here](https://...) — the URL is hidden behind the anchor word.
+const ANCHOR_RE = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
 
 function shortCode(len = 6) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz";
@@ -23,16 +25,24 @@ async function makeShortLink(kind: "post" | "ad", refId: string, src: "button" |
   return `${origin}/api/public/t/${refId}?p=${kind}&src=${src}${targetUrl ? `&to=${encodeURIComponent(targetUrl)}` : ""}`;
 }
 
-// Replace every http(s) URL in `text` with a short tracking URL.
+// 1) [word](url) -> <a href="trackedShortUrl">word</a>  (URL hidden behind anchor word)
+// 2) any remaining bare URL -> short tracked URL
 async function rewriteLinks(text: string, origin: string, trackerId: string, source: "post" | "ad"): Promise<{ text: string; map: Record<string, string> }> {
   if (!text || !origin) return { text: text || "", map: {} };
   const map: Record<string, string> = {};
-  const urls = Array.from(text.matchAll(URL_RE)).map(m => m[0]);
-  for (const orig of urls) {
-    if (map[orig]) continue;
-    map[orig] = await makeShortLink(source, trackerId, "link", orig, origin);
+
+  const anchors = Array.from(text.matchAll(ANCHOR_RE));
+  for (const m of anchors) {
+    const url = m[2];
+    if (!map[url]) map[url] = await makeShortLink(source, trackerId, "link", url, origin);
   }
-  const out = text.replace(URL_RE, (orig) => map[orig] || orig);
+  let out = text.replace(ANCHOR_RE, (_f, label, url) => `<a href="${map[url] || url}">${label}</a>`);
+
+  const bareUrls = Array.from(out.matchAll(URL_RE)).map(m => m[0]).filter(u => !u.includes(origin));
+  for (const orig of bareUrls) {
+    if (!map[orig]) map[orig] = await makeShortLink(source, trackerId, "link", orig, origin);
+  }
+  out = out.replace(URL_RE, (orig) => (orig.includes(origin) ? orig : (map[orig] || orig)));
   return { text: out, map };
 }
 
