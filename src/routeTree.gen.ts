@@ -14,6 +14,7 @@ import { Route as RCodeRouteImport } from './routes/r.$code'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram.webhook'
 import { Route as ApiPublicTIdRouteImport } from './routes/api/public/t.$id'
 import { Route as ApiPublicRCodeRouteImport } from './routes/api/public/r.$code'
+import { Route as ApiPublicCronRefreshStatsRouteImport } from './routes/api/public/cron.refresh-stats'
 import { Route as ApiPublicCronDistributeRouteImport } from './routes/api/public/cron.distribute'
 
 const IndexRoute = IndexRouteImport.update({
@@ -42,6 +43,12 @@ const ApiPublicRCodeRoute = ApiPublicRCodeRouteImport.update({
   path: '/api/public/r/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCronRefreshStatsRoute =
+  ApiPublicCronRefreshStatsRouteImport.update({
+    id: '/api/public/cron/refresh-stats',
+    path: '/api/public/cron/refresh-stats',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCronDistributeRoute = ApiPublicCronDistributeRouteImport.update({
   id: '/api/public/cron/distribute',
   path: '/api/public/cron/distribute',
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/r/$code': typeof RCodeRoute
   '/api/public/cron/distribute': typeof ApiPublicCronDistributeRoute
+  '/api/public/cron/refresh-stats': typeof ApiPublicCronRefreshStatsRoute
   '/api/public/r/$code': typeof ApiPublicRCodeRoute
   '/api/public/t/$id': typeof ApiPublicTIdRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -60,6 +68,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/r/$code': typeof RCodeRoute
   '/api/public/cron/distribute': typeof ApiPublicCronDistributeRoute
+  '/api/public/cron/refresh-stats': typeof ApiPublicCronRefreshStatsRoute
   '/api/public/r/$code': typeof ApiPublicRCodeRoute
   '/api/public/t/$id': typeof ApiPublicTIdRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -69,6 +78,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/r/$code': typeof RCodeRoute
   '/api/public/cron/distribute': typeof ApiPublicCronDistributeRoute
+  '/api/public/cron/refresh-stats': typeof ApiPublicCronRefreshStatsRoute
   '/api/public/r/$code': typeof ApiPublicRCodeRoute
   '/api/public/t/$id': typeof ApiPublicTIdRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -79,6 +89,7 @@ export interface FileRouteTypes {
     | '/'
     | '/r/$code'
     | '/api/public/cron/distribute'
+    | '/api/public/cron/refresh-stats'
     | '/api/public/r/$code'
     | '/api/public/t/$id'
     | '/api/public/telegram/webhook'
@@ -87,6 +98,7 @@ export interface FileRouteTypes {
     | '/'
     | '/r/$code'
     | '/api/public/cron/distribute'
+    | '/api/public/cron/refresh-stats'
     | '/api/public/r/$code'
     | '/api/public/t/$id'
     | '/api/public/telegram/webhook'
@@ -95,6 +107,7 @@ export interface FileRouteTypes {
     | '/'
     | '/r/$code'
     | '/api/public/cron/distribute'
+    | '/api/public/cron/refresh-stats'
     | '/api/public/r/$code'
     | '/api/public/t/$id'
     | '/api/public/telegram/webhook'
@@ -104,6 +117,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   RCodeRoute: typeof RCodeRoute
   ApiPublicCronDistributeRoute: typeof ApiPublicCronDistributeRoute
+  ApiPublicCronRefreshStatsRoute: typeof ApiPublicCronRefreshStatsRoute
   ApiPublicRCodeRoute: typeof ApiPublicRCodeRoute
   ApiPublicTIdRoute: typeof ApiPublicTIdRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
@@ -146,6 +160,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cron/refresh-stats': {
+      id: '/api/public/cron/refresh-stats'
+      path: '/api/public/cron/refresh-stats'
+      fullPath: '/api/public/cron/refresh-stats'
+      preLoaderRoute: typeof ApiPublicCronRefreshStatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/distribute': {
       id: '/api/public/cron/distribute'
       path: '/api/public/cron/distribute'
@@ -160,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   RCodeRoute: RCodeRoute,
   ApiPublicCronDistributeRoute: ApiPublicCronDistributeRoute,
+  ApiPublicCronRefreshStatsRoute: ApiPublicCronRefreshStatsRoute,
   ApiPublicRCodeRoute: ApiPublicRCodeRoute,
   ApiPublicTIdRoute: ApiPublicTIdRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
